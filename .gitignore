@@ -1,0 +1,10 @@
+.DS_Store
+.env
+__pycache__/
+*.pyc
+
+adaptive_state.json
+journal.csv
+backtest_journal.csv
+trades.log
+ohlcv/
