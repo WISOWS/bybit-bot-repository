@@ -27,6 +27,9 @@ from main import (
     level_touched,
 )
 
+BACKTEST_TAKER_FEE_RATE = 0.00055
+BACKTEST_SLIPPAGE_RATE = 0.0005
+
 
 def load_ohlcv_csv(path: str) -> List[List[str]]:
     rows: List[List[str]] = []
@@ -77,6 +80,20 @@ def simulate_exit(
 
     last_index = len(klines_1h) - 1
     return float(klines_1h[last_index][4]), "end_of_data", last_index
+
+
+def apply_adverse_slippage(price: float, side: str, action: str) -> float:
+    if price <= 0:
+        return price
+
+    if action == "entry":
+        if side == "Buy":
+            return price * (1 + BACKTEST_SLIPPAGE_RATE)
+        return price * (1 - BACKTEST_SLIPPAGE_RATE)
+
+    if side == "Buy":
+        return price * (1 - BACKTEST_SLIPPAGE_RATE)
+    return price * (1 + BACKTEST_SLIPPAGE_RATE)
 
 
 def run_backtest(
@@ -202,9 +219,13 @@ def run_backtest(
             idx_1h += 1
             continue
 
+        effective_entry = apply_adverse_slippage(entry, side, "entry")
         exit_price, exit_reason, exit_index = simulate_exit(klines_1h, idx_1h, side, stop, tp)
-        pnl_per_unit = exit_price - entry if side == "Buy" else entry - exit_price
-        realized_pnl = qty * pnl_per_unit
+        effective_exit = apply_adverse_slippage(exit_price, side, "exit")
+        pnl_per_unit = effective_exit - effective_entry if side == "Buy" else effective_entry - effective_exit
+        entry_fee = qty * effective_entry * BACKTEST_TAKER_FEE_RATE
+        exit_fee = qty * effective_exit * BACKTEST_TAKER_FEE_RATE
+        realized_pnl = qty * pnl_per_unit - entry_fee - exit_fee
         risk_usdt = qty * risk_per_unit
 
         balance += realized_pnl
@@ -220,7 +241,13 @@ def run_backtest(
             "entry_time_ms": current_time_ms,
             "exit_time_ms": int(klines_1h[exit_index][0]),
             "exit_price": round(exit_price, 8),
+            "effective_entry": round(effective_entry, 8),
+            "effective_exit": round(effective_exit, 8),
             "exit_reason": exit_reason,
+            "entry_fee": round(entry_fee, 8),
+            "exit_fee": round(exit_fee, 8),
+            "slippage_rate": BACKTEST_SLIPPAGE_RATE,
+            "taker_fee_rate": BACKTEST_TAKER_FEE_RATE,
             "qty": round(qty, 8),
             "balance_after": round(balance, 8),
         }

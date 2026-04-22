@@ -20,6 +20,7 @@
   "daily_pnl_sync_limit": 100,
   "signal_score_threshold": 2,
   "adaptive_half_life_days": 60,
+  "portfolio_mode": "training",
   "max_directional_risk_pct": 0.02,
   "max_total_open_risk_pct": 0.04,
   "max_positions_per_direction": 5,

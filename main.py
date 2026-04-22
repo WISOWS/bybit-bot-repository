@@ -48,6 +48,7 @@ MODE = os.getenv("MODE", "DEMO").upper()
 BYBIT_API_KEY = os.getenv("BYBIT_API_KEY")
 BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET")
 
+PORTFOLIO_MODE = str(CONFIG.get("portfolio_mode", "production")).strip().lower()
 RISK_PER_TRADE = float(CONFIG.get("risk_per_trade", 0.0025))
 LEVERAGE = int(CONFIG.get("leverage", 5))
 POSITION_IDX = int(CONFIG.get("position_idx", 0))
@@ -71,9 +72,14 @@ SYMBOL_VALIDATION_ON_STARTUP = bool(CONFIG.get("symbol_validation_on_startup", T
 SLEEP_SECONDS = int(CONFIG.get("sleep_seconds", 900))
 DAILY_PNL_SYNC_LIMIT = max(1, min(int(CONFIG.get("daily_pnl_sync_limit", 100)), 100))
 SIGNAL_SCORE_THRESHOLD = int(CONFIG.get("signal_score_threshold", 2))
-MAX_DIRECTIONAL_RISK_PCT = float(CONFIG.get("max_directional_risk_pct", 0.02))
-MAX_TOTAL_OPEN_RISK_PCT = float(CONFIG.get("max_total_open_risk_pct", 0.04))
-MAX_POSITIONS_PER_DIRECTION = int(CONFIG.get("max_positions_per_direction", 5))
+if PORTFOLIO_MODE == "training":
+    MAX_POSITIONS_PER_DIRECTION = 10
+    MAX_DIRECTIONAL_RISK_PCT = 0.03
+    MAX_TOTAL_OPEN_RISK_PCT = 0.06
+else:
+    MAX_DIRECTIONAL_RISK_PCT = float(CONFIG.get("max_directional_risk_pct", 0.02))
+    MAX_TOTAL_OPEN_RISK_PCT = float(CONFIG.get("max_total_open_risk_pct", 0.04))
+    MAX_POSITIONS_PER_DIRECTION = int(CONFIG.get("max_positions_per_direction", 5))
 MIN_LIVE_TRADES_FOR_ADAPTIVE_WEIGHTS = int(CONFIG.get("min_live_trades_for_adaptive_weights", 30))
 REQUEST_RECV_WINDOW_MS = int(CONFIG.get("recv_window_ms", 10000))
 
@@ -1726,9 +1732,15 @@ def process_symbol(client: BybitClient, symbol: str, today_trades: int) -> int:
 
     clean_level_ok = not is_range_dirty_around_level(klines_4h, level)
     level_score = 1.0 if clean_level_ok else 0.2
+    if not clean_level_ok:
+        logger.info("%s: уровень грязный, NO TRADE", symbol)
+        return today_trades
 
     structure_touch = level_touched(klines_1h_closed[-1], level, atr_4h * 0.2)
     structure_score = 0.3 if structure_touch else 0.0
+    if distance_score <= 0.2:
+        logger.info("%s: distance_score=%.3f <= 0.200, NO TRADE", symbol, distance_score)
+        return today_trades
 
     edge_score = calc_adaptive_edge_score(
         trend_score,
@@ -2093,6 +2105,8 @@ def current_day_str() -> str:
 def validate_startup() -> None:
     if not BYBIT_API_KEY or not BYBIT_API_SECRET:
         raise ValueError("Не заданы BYBIT_API_KEY / BYBIT_API_SECRET в .env")
+    if PORTFOLIO_MODE not in {"training", "production"}:
+        raise ValueError("portfolio_mode должен быть training или production")
     if not SYMBOLS:
         raise ValueError("В конфиге пустой список symbols")
     if not (0 < RISK_PER_TRADE < 1):
@@ -2152,8 +2166,9 @@ def main() -> None:
     risk_state = sync_daily_risk_state(client, today)
 
     logger.info(
-        "Старт бота MODE=%s base_url=%s risk=%.2f%% leverage=%s config=%s opened_today=%s active_symbols=%s/%s",
+        "Старт бота MODE=%s portfolio_mode=%s base_url=%s risk=%.2f%% leverage=%s config=%s opened_today=%s active_symbols=%s/%s",
         MODE,
+        PORTFOLIO_MODE,
         BASE_URL,
         RISK_PER_TRADE * 100,
         LEVERAGE,
@@ -2161,6 +2176,12 @@ def main() -> None:
         today_trades,
         len(active_symbols),
         len(configured_symbols),
+    )
+    logger.info(
+        "Портфельные лимиты: max_positions_per_direction=%s max_directional_risk_pct=%.2f%% max_total_open_risk_pct=%.2f%%",
+        MAX_POSITIONS_PER_DIRECTION,
+        MAX_DIRECTIONAL_RISK_PCT * 100,
+        MAX_TOTAL_OPEN_RISK_PCT * 100,
     )
     logger.info(
         "Риск-снимок %s: wallet=%.2f available=%.2f equity=%.2f day_net=%.2f fees=%.2f trades=%s losses_in_row=%s daily_stop=%.2f",
