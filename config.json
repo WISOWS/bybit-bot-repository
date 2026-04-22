@@ -25,7 +25,7 @@
   "max_total_open_risk_pct": 0.04,
   "max_positions_per_direction": 5,
   "min_live_trades_for_adaptive_weights": 30,
-  "recv_window_ms": 10000,
+  "recv_window_ms": 20000,
   "symbols": [
     "BTCUSDT",
     "ETHUSDT",

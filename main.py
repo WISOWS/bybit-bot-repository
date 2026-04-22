@@ -81,7 +81,7 @@ else:
     MAX_TOTAL_OPEN_RISK_PCT = float(CONFIG.get("max_total_open_risk_pct", 0.04))
     MAX_POSITIONS_PER_DIRECTION = int(CONFIG.get("max_positions_per_direction", 5))
 MIN_LIVE_TRADES_FOR_ADAPTIVE_WEIGHTS = int(CONFIG.get("min_live_trades_for_adaptive_weights", 30))
-REQUEST_RECV_WINDOW_MS = int(CONFIG.get("recv_window_ms", 10000))
+REQUEST_RECV_WINDOW_MS = int(CONFIG.get("recv_window_ms", 20000))
 
 LOG_PATH = os.path.join(BASE_DIR, "trades.log")
 JOURNAL_PATH = os.path.join(BASE_DIR, "journal.csv")
@@ -227,6 +227,7 @@ class BybitClient:
         self.api_secret = api_secret.encode("utf-8")
         self.base_url = base_url.rstrip("/")
         self.session = requests.Session()
+        self.time_offset_ms = 0
 
     @staticmethod
     def _clean_params(params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -245,8 +246,42 @@ class BybitClient:
                 items.append((key, str(value)))
         return items
 
+    def _sync_time_offset(self) -> bool:
+        url = f"{self.base_url}/v5/market/time"
+        start_ms = int(time.time() * 1000)
+        try:
+            resp = self.session.get(url, timeout=REQUEST_TIMEOUT)
+        except requests.RequestException as exc:
+            logger.warning("Не удалось синхронизировать время с Bybit: %s", exc)
+            return False
+
+        end_ms = int(time.time() * 1000)
+        try:
+            data = resp.json()
+        except ValueError:
+            logger.warning("Bybit time sync вернул не-JSON: status=%s body=%s", resp.status_code, resp.text)
+            return False
+
+        if not resp.ok or data.get("retCode") != 0:
+            logger.warning("Не удалось синхронизировать время с Bybit: %s", data)
+            return False
+
+        result = data.get("result", {}) or {}
+        try:
+            server_ms = int(int(result.get("timeNano", "0")) / 1_000_000)
+        except (TypeError, ValueError):
+            try:
+                server_ms = int(data.get("time", 0))
+            except (TypeError, ValueError):
+                return False
+
+        midpoint_ms = (start_ms + end_ms) // 2
+        self.time_offset_ms = server_ms - midpoint_ms
+        logger.info("Синхронизация времени Bybit: offset_ms=%s", self.time_offset_ms)
+        return True
+
     def _build_auth_headers(self, payload_to_sign: str) -> Dict[str, str]:
-        timestamp = str(int(time.time() * 1000))
+        timestamp = str(int(time.time() * 1000) + self.time_offset_ms)
         raw = f"{timestamp}{self.api_key}{REQUEST_RECV_WINDOW}{payload_to_sign}"
         signature = hmac.new(self.api_secret, raw.encode("utf-8"), hashlib.sha256).hexdigest()
         return {
@@ -263,6 +298,7 @@ class BybitClient:
         path: str,
         params: Optional[Dict[str, Any]] = None,
         auth: bool = False,
+        retry_on_time_sync: bool = True,
     ) -> Dict[str, Any]:
         url = f"{self.base_url}{path}"
         clean_params = self._clean_params(params)
@@ -304,6 +340,11 @@ class BybitClient:
         if not resp.ok:
             logger.warning("HTTP %s on %s: %s", resp.status_code, path, data)
             return data
+
+        if auth and retry_on_time_sync and data.get("retCode") == 10002:
+            logger.warning("Bybit time drift detected on %s, syncing time and retrying once", path)
+            if self._sync_time_offset():
+                return self._request(method, path, clean_params, auth=auth, retry_on_time_sync=False)
 
         if data.get("retCode") != 0:
             logger.warning("Bybit API error on %s: %s", path, data)
