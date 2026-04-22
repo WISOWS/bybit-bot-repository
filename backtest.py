@@ -7,21 +7,22 @@ from typing import Any, Dict, List, Tuple
 
 from main import (
     JOURNAL_FIELDNAMES,
+    LIVE_MIN_DISTANCE_SCORE,
+    LIVE_REQUIRE_IMPULSE,
+    LIVE_SIGNAL_THRESHOLD,
     LEVERAGE,
     LIVE_SL_BUFFER,
     MAX_LEVEL_DISTANCE_ATR,
     MAX_STOP_ATR,
     MIN_RR,
     RISK_PER_TRADE,
-    SIGNAL_SCORE_THRESHOLD,
     SL_ATR_BUFFER,
-    calc_adaptive_edge_score,
+    calc_signal_score,
     calc_atr_from_klines,
     calc_qty_by_margin,
     calc_qty_by_risk,
     detect_trend_4h,
     find_level_break_trend,
-    get_adaptive_threshold,
     impulse_filter_ok,
     is_range_dirty_around_level,
     level_touched,
@@ -157,28 +158,37 @@ def run_backtest(
         ) else 0.3
 
         if max_level_distance > 0:
-            distance_score = max(0.0, 1 - abs(entry - level) / max_level_distance)
+            distance_score = max(0.1, 1 - abs(entry - level) / max_level_distance)
         else:
-            distance_score = 0.0
+            distance_score = 0.1
 
         recent_1h_12 = klines_1h[idx_1h - 11 : idx_1h + 1]
         impulse_ok_value = impulse_filter_ok(recent_1h_12, len(recent_1h_12) - 1, side)
         impulse_score = 1.0 if impulse_ok_value else 0.3
+        if LIVE_REQUIRE_IMPULSE and not impulse_ok_value:
+            idx_1h += 1
+            continue
 
         clean_level_ok = not is_range_dirty_around_level(recent_4h_20, level)
         level_score = 1.0 if clean_level_ok else 0.2
+        if not clean_level_ok:
+            idx_1h += 1
+            continue
 
         structure_touch = level_touched(current_1h, level, atr_4h * 0.2)
-        structure_score = 1.0 if structure_touch else 0.0
+        structure_score = 0.3 if structure_touch else 0.0
+        if distance_score < LIVE_MIN_DISTANCE_SCORE:
+            idx_1h += 1
+            continue
 
-        edge_score = calc_adaptive_edge_score(
+        edge_score = calc_signal_score(
             trend_score,
             level_score,
             distance_score,
             impulse_score,
             structure_score,
         )
-        score_threshold = get_adaptive_threshold(SIGNAL_SCORE_THRESHOLD / 3.0)
+        score_threshold = LIVE_SIGNAL_THRESHOLD
 
         if edge_score < score_threshold:
             idx_1h += 1
@@ -200,11 +210,11 @@ def run_backtest(
             continue
 
         rr = reward_per_unit / risk_per_unit
-        if rr < MIN_RR:
+        if rr < 2.8:
             idx_1h += 1
             continue
 
-        if risk_per_unit > atr_4h * MAX_STOP_ATR:
+        if risk_per_unit > atr_4h * MAX_STOP_ATR * 1.3:
             idx_1h += 1
             continue
 

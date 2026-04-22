@@ -49,6 +49,8 @@ BYBIT_API_KEY = os.getenv("BYBIT_API_KEY")
 BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET")
 
 PORTFOLIO_MODE = str(CONFIG.get("portfolio_mode", "production")).strip().lower()
+ENABLE_ADAPTIVE_RUNTIME = bool(CONFIG.get("enable_adaptive_runtime", False))
+ENABLE_ADAPTIVE_ANALYTICS = bool(CONFIG.get("enable_adaptive_analytics", False))
 RISK_PER_TRADE = float(CONFIG.get("risk_per_trade", 0.0025))
 LEVERAGE = int(CONFIG.get("leverage", 5))
 POSITION_IDX = int(CONFIG.get("position_idx", 0))
@@ -72,6 +74,9 @@ SYMBOL_VALIDATION_ON_STARTUP = bool(CONFIG.get("symbol_validation_on_startup", T
 SLEEP_SECONDS = int(CONFIG.get("sleep_seconds", 900))
 DAILY_PNL_SYNC_LIMIT = max(1, min(int(CONFIG.get("daily_pnl_sync_limit", 100)), 100))
 SIGNAL_SCORE_THRESHOLD = int(CONFIG.get("signal_score_threshold", 2))
+LIVE_SIGNAL_THRESHOLD = float(CONFIG.get("live_signal_threshold", 0.70))
+LIVE_MIN_DISTANCE_SCORE = float(CONFIG.get("live_min_distance_score", 0.30))
+LIVE_REQUIRE_IMPULSE = bool(CONFIG.get("live_require_impulse", True))
 if PORTFOLIO_MODE == "training":
     MAX_POSITIONS_PER_DIRECTION = 10
     MAX_DIRECTIONAL_RISK_PCT = 0.03
@@ -1679,6 +1684,15 @@ def calc_adaptive_edge_score(
     impulse_score: float,
     structure_score: float,
 ) -> float:
+    if not ENABLE_ADAPTIVE_RUNTIME:
+        return calc_signal_score(
+            trend_score,
+            level_score,
+            distance_score,
+            impulse_score,
+            structure_score,
+        )
+
     adaptive_weights = get_adaptive_weights()
     if not adaptive_weights:
         return calc_signal_score(
@@ -1770,6 +1784,9 @@ def process_symbol(client: BybitClient, symbol: str, today_trades: int) -> int:
 
     impulse_ok_value = impulse_filter_ok(klines_1h_closed, len(klines_1h_closed) - 1, side)
     impulse_score = 1.0 if impulse_ok_value else 0.3
+    if LIVE_REQUIRE_IMPULSE and not impulse_ok_value:
+        logger.info("%s: слабый импульс, NO TRADE", symbol)
+        return today_trades
 
     clean_level_ok = not is_range_dirty_around_level(klines_4h, level)
     level_score = 1.0 if clean_level_ok else 0.2
@@ -1779,8 +1796,13 @@ def process_symbol(client: BybitClient, symbol: str, today_trades: int) -> int:
 
     structure_touch = level_touched(klines_1h_closed[-1], level, atr_4h * 0.2)
     structure_score = 0.3 if structure_touch else 0.0
-    if distance_score <= 0.2:
-        logger.info("%s: distance_score=%.3f <= 0.200, NO TRADE", symbol, distance_score)
+    if distance_score < LIVE_MIN_DISTANCE_SCORE:
+        logger.info(
+            "%s: distance_score=%.3f < %.3f, NO TRADE",
+            symbol,
+            distance_score,
+            LIVE_MIN_DISTANCE_SCORE,
+        )
         return today_trades
 
     edge_score = calc_adaptive_edge_score(
@@ -1790,7 +1812,7 @@ def process_symbol(client: BybitClient, symbol: str, today_trades: int) -> int:
         impulse_score,
         structure_score,
     )
-    score_threshold = 0.55
+    score_threshold = LIVE_SIGNAL_THRESHOLD
 
     logger.info(
         "%s EDGE_SCORE=%.3f (trend=%.2f level=%.2f dist=%.2f impulse=%.2f struct=%.2f) threshold=%.3f",
@@ -2162,6 +2184,10 @@ def validate_startup() -> None:
         raise ValueError("sleep_seconds должен быть > 0")
     if SIGNAL_SCORE_THRESHOLD < 1 or SIGNAL_SCORE_THRESHOLD > 3:
         raise ValueError("signal_score_threshold должен быть между 1 и 3")
+    if not (0 < LIVE_SIGNAL_THRESHOLD <= 1):
+        raise ValueError("live_signal_threshold должен быть между 0 и 1")
+    if not (0 <= LIVE_MIN_DISTANCE_SCORE <= 1):
+        raise ValueError("live_min_distance_score должен быть между 0 и 1")
     if ADAPTIVE_HALF_LIFE_DAYS <= 0:
         raise ValueError("adaptive_half_life_days должен быть > 0")
     if MAX_DIRECTIONAL_RISK_PCT < 0:
@@ -2183,16 +2209,18 @@ def main() -> None:
     synced_rows = sync_closed_trades_to_journal(client)
     if synced_rows > 0:
         logger.info("Журнал синхронизирован: закрытых сделок обновлено %s", synced_rows)
-    adaptive_state = update_adaptive_model()
-    if adaptive_state:
-        logger.info(
-            "Adaptive edge обновлён: learned_threshold=%.3f runtime_threshold=0.550 trades=%s live=%s backtest=%s weights=%s",
-            adaptive_state["threshold"],
-            adaptive_state["trade_count"],
-            adaptive_state["live_trade_count"],
-            adaptive_state["backtest_trade_count"],
-            adaptive_state["weights"],
-        )
+    if ENABLE_ADAPTIVE_ANALYTICS:
+        adaptive_state = update_adaptive_model()
+        if adaptive_state:
+            logger.info(
+                "Adaptive analytics обновлён: learned_threshold=%.3f runtime_adaptive=%s trades=%s live=%s backtest=%s weights=%s",
+                adaptive_state["threshold"],
+                ENABLE_ADAPTIVE_RUNTIME,
+                adaptive_state["trade_count"],
+                adaptive_state["live_trade_count"],
+                adaptive_state["backtest_trade_count"],
+                adaptive_state["weights"],
+            )
     configured_symbols = normalize_symbols(SYMBOLS)
     active_symbols = (
         validate_symbols(client, configured_symbols)
@@ -2207,9 +2235,10 @@ def main() -> None:
     risk_state = sync_daily_risk_state(client, today)
 
     logger.info(
-        "Старт бота MODE=%s portfolio_mode=%s base_url=%s risk=%.2f%% leverage=%s config=%s opened_today=%s active_symbols=%s/%s",
+        "Старт бота MODE=%s portfolio_mode=%s adaptive_runtime=%s base_url=%s risk=%.2f%% leverage=%s config=%s opened_today=%s active_symbols=%s/%s",
         MODE,
         PORTFOLIO_MODE,
+        ENABLE_ADAPTIVE_RUNTIME,
         BASE_URL,
         RISK_PER_TRADE * 100,
         LEVERAGE,
@@ -2217,6 +2246,12 @@ def main() -> None:
         today_trades,
         len(active_symbols),
         len(configured_symbols),
+    )
+    logger.info(
+        "Торговые лимиты: live_threshold=%.3f min_distance=%.3f require_impulse=%s",
+        LIVE_SIGNAL_THRESHOLD,
+        LIVE_MIN_DISTANCE_SCORE,
+        LIVE_REQUIRE_IMPULSE,
     )
     logger.info(
         "Портфельные лимиты: max_positions_per_direction=%s max_directional_risk_pct=%.2f%% max_total_open_risk_pct=%.2f%%",
@@ -2241,16 +2276,18 @@ def main() -> None:
         synced_rows = sync_closed_trades_to_journal(client)
         if synced_rows > 0:
             logger.info("Журнал синхронизирован: закрытых сделок обновлено %s", synced_rows)
-        adaptive_state = update_adaptive_model()
-        if adaptive_state:
-            logger.info(
-                "Adaptive edge обновлён: learned_threshold=%.3f runtime_threshold=0.550 trades=%s live=%s backtest=%s weights=%s",
-                adaptive_state["threshold"],
-                adaptive_state["trade_count"],
-                adaptive_state["live_trade_count"],
-                adaptive_state["backtest_trade_count"],
-                adaptive_state["weights"],
-            )
+        if ENABLE_ADAPTIVE_ANALYTICS:
+            adaptive_state = update_adaptive_model()
+            if adaptive_state:
+                logger.info(
+                    "Adaptive analytics обновлён: learned_threshold=%.3f runtime_adaptive=%s trades=%s live=%s backtest=%s weights=%s",
+                    adaptive_state["threshold"],
+                    ENABLE_ADAPTIVE_RUNTIME,
+                    adaptive_state["trade_count"],
+                    adaptive_state["live_trade_count"],
+                    adaptive_state["backtest_trade_count"],
+                    adaptive_state["weights"],
+                )
 
         now_day = current_day_str()
         if now_day != today:
