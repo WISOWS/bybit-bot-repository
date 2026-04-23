@@ -1,0 +1,18 @@
+[Unit]
+Description=Bybit Meta Portfolio Forward Runner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+Group=__GROUP__
+WorkingDirectory=__PROJECT_DIR__
+Environment=PYTHONUNBUFFERED=1
+ExecStart=__PYTHON_BIN__ __PROJECT_DIR__/meta_portfolio_forward.py --btc-mode __BTC_MODE__ --min-hot-vol-ratio __MIN_HOT_VOL_RATIO__ --max-concurrent __MAX_CONCURRENT__ --sleep-seconds __SLEEP_SECONDS__
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
