@@ -57,6 +57,18 @@ class BreakoutRetestParams:
     require_directional_close: bool = True
 
 
+@dataclass(frozen=True)
+class RangeMeanReversionParams:
+    flat_lookback_4h: int = 30
+    range_lookback_4h: int = 20
+    zone_fraction: float = 0.12
+    stop_buffer_atr: float = 0.2
+    target_fraction: float = 0.5
+    min_rr: float = 1.5
+    max_stop_multiplier: float = 1.0
+    require_directional_close: bool = True
+
+
 def candle_open(candle: List[Any]) -> float:
     return float(candle[1])
 
@@ -388,73 +400,104 @@ def range_mean_reversion(
     klines_4h: List[List[Any]],
     idx_4h: int,
 ) -> Optional[StrategySetup]:
-    if idx_4h < 29 or idx_1h < 1:
-        return None
-
-    recent_4h_30 = klines_4h[idx_4h - 29 : idx_4h + 1]
-    recent_4h_20 = klines_4h[idx_4h - 19 : idx_4h + 1]
-    recent_4h_15 = klines_4h[idx_4h - 14 : idx_4h + 1]
-    current_1h = klines_1h[idx_1h]
-
-    if detect_trend_4h(recent_4h_30) != "FLAT":
-        return None
-
-    atr_4h = calc_atr_from_klines(recent_4h_15, period=14)
-    if atr_4h <= 0:
-        return None
-
-    range_high = max(candle_high(candle) for candle in recent_4h_20)
-    range_low = min(candle_low(candle) for candle in recent_4h_20)
-    range_width = range_high - range_low
-    if range_width <= 0:
-        return None
-
-    entry = candle_close(current_1h)
-    midpoint = range_low + range_width * 0.5
-    buy_zone = range_low + range_width * 0.12
-    sell_zone = range_high - range_width * 0.12
-
-    if candle_low(current_1h) <= buy_zone and bullish_close(current_1h):
-        side = "Buy"
-        level = range_low
-        stop = range_low - atr_4h * 0.2
-        risk = entry - stop
-        tp = midpoint
-        reward = tp - entry
-    elif candle_high(current_1h) >= sell_zone and bearish_close(current_1h):
-        side = "Sell"
-        level = range_high
-        stop = range_high + atr_4h * 0.2
-        risk = stop - entry
-        tp = midpoint
-        reward = entry - tp
-    else:
-        return None
-
-    if risk <= 0 or reward <= 0:
-        return None
-    if risk > atr_4h * MAX_STOP_ATR:
-        return None
-    if reward / risk < 1.5:
-        return None
-
-    return StrategySetup(
-        strategy="range_mean_reversion",
-        side=side,
-        entry=entry,
-        stop=stop,
-        tp=tp,
-        atr_4h=atr_4h,
-        level=level,
-        planned_rr=reward / risk,
-        impulse_ok=True,
-        meta={
-            "trend": "FLAT",
-            "entry_pattern": "range_reversion",
-            "range_high": round(range_high, 8),
-            "range_low": round(range_low, 8),
-        },
+    return make_range_mean_reversion_strategy(RangeMeanReversionParams())(
+        klines_1h,
+        idx_1h,
+        klines_4h,
+        idx_4h,
     )
+
+
+def make_range_mean_reversion_strategy(params: RangeMeanReversionParams):
+    def strategy(
+        klines_1h: List[List[Any]],
+        idx_1h: int,
+        klines_4h: List[List[Any]],
+        idx_4h: int,
+    ) -> Optional[StrategySetup]:
+        min_idx = max(params.flat_lookback_4h, params.range_lookback_4h, 15) - 1
+        if idx_4h < min_idx or idx_1h < 1:
+            return None
+
+        recent_flat = klines_4h[idx_4h - params.flat_lookback_4h + 1 : idx_4h + 1]
+        recent_range = klines_4h[idx_4h - params.range_lookback_4h + 1 : idx_4h + 1]
+        recent_4h_15 = klines_4h[idx_4h - 14 : idx_4h + 1]
+        current_1h = klines_1h[idx_1h]
+
+        if detect_trend_4h(recent_flat) != "FLAT":
+            return None
+
+        atr_4h = calc_atr_from_klines(recent_4h_15, period=14)
+        if atr_4h <= 0:
+            return None
+
+        range_high = max(candle_high(candle) for candle in recent_range)
+        range_low = min(candle_low(candle) for candle in recent_range)
+        range_width = range_high - range_low
+        if range_width <= 0:
+            return None
+
+        entry = candle_close(current_1h)
+        target_price = range_low + range_width * params.target_fraction
+        buy_zone = range_low + range_width * params.zone_fraction
+        sell_zone = range_high - range_width * params.zone_fraction
+
+        buy_confirm = bullish_close(current_1h) if params.require_directional_close else True
+        sell_confirm = bearish_close(current_1h) if params.require_directional_close else True
+
+        if candle_low(current_1h) <= buy_zone and buy_confirm:
+            side = "Buy"
+            level = range_low
+            stop = range_low - atr_4h * params.stop_buffer_atr
+            risk = entry - stop
+            tp = target_price
+            reward = tp - entry
+        elif candle_high(current_1h) >= sell_zone and sell_confirm:
+            side = "Sell"
+            level = range_high
+            stop = range_high + atr_4h * params.stop_buffer_atr
+            risk = stop - entry
+            tp = target_price
+            reward = entry - tp
+        else:
+            return None
+
+        if risk <= 0 or reward <= 0:
+            return None
+        if risk > atr_4h * MAX_STOP_ATR * params.max_stop_multiplier:
+            return None
+        if reward / risk < params.min_rr:
+            return None
+
+        return StrategySetup(
+            strategy="range_mean_reversion",
+            side=side,
+            entry=entry,
+            stop=stop,
+            tp=tp,
+            atr_4h=atr_4h,
+            level=level,
+            planned_rr=reward / risk,
+            impulse_ok=True,
+            meta={
+                "trend": "FLAT",
+                "entry_pattern": "range_reversion",
+                "range_high": round(range_high, 8),
+                "range_low": round(range_low, 8),
+                "params": {
+                    "flat_lookback_4h": params.flat_lookback_4h,
+                    "range_lookback_4h": params.range_lookback_4h,
+                    "zone_fraction": params.zone_fraction,
+                    "stop_buffer_atr": params.stop_buffer_atr,
+                    "target_fraction": params.target_fraction,
+                    "min_rr": params.min_rr,
+                    "max_stop_multiplier": params.max_stop_multiplier,
+                    "require_directional_close": params.require_directional_close,
+                },
+            },
+        )
+
+    return strategy
 
 
 STRATEGIES = {
