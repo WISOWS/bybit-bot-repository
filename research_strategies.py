@@ -69,6 +69,23 @@ class RangeMeanReversionParams:
     require_directional_close: bool = True
 
 
+@dataclass(frozen=True)
+class MomentumExpansionParams:
+    breakout_lookback_1h: int = 12
+    compression_lookback_4h: int = 8
+    atr_short_period: int = 6
+    atr_long_period: int = 14
+    max_atr_ratio: float = 0.85
+    rr_target: float = 3.0
+    stop_buffer_atr: float = 0.1
+    max_stop_multiplier: float = 1.0
+    ema_fast_period: int = 10
+    ema_slow_period: int = 30
+    min_body_fraction: float = 0.55
+    min_range_expansion: float = 1.2
+    swing_lookback_1h: int = 4
+
+
 def candle_open(candle: List[Any]) -> float:
     return float(candle[1])
 
@@ -91,6 +108,17 @@ def bullish_close(candle: List[Any]) -> bool:
 
 def bearish_close(candle: List[Any]) -> bool:
     return candle_close(candle) < candle_open(candle)
+
+
+def candle_range_value(candle: List[Any]) -> float:
+    return candle_high(candle) - candle_low(candle)
+
+
+def candle_body_fraction(candle: List[Any]) -> float:
+    candle_range = candle_range_value(candle)
+    if candle_range <= 0:
+        return 0.0
+    return abs(candle_close(candle) - candle_open(candle)) / candle_range
 
 
 def ema(values: List[float], period: int) -> float:
@@ -408,6 +436,167 @@ def range_mean_reversion(
     )
 
 
+def momentum_volatility_expansion(
+    klines_1h: List[List[Any]],
+    idx_1h: int,
+    klines_4h: List[List[Any]],
+    idx_4h: int,
+) -> Optional[StrategySetup]:
+    return make_momentum_expansion_strategy(MomentumExpansionParams())(
+        klines_1h,
+        idx_1h,
+        klines_4h,
+        idx_4h,
+    )
+
+
+def make_momentum_expansion_strategy(params: MomentumExpansionParams):
+    def strategy(
+        klines_1h: List[List[Any]],
+        idx_1h: int,
+        klines_4h: List[List[Any]],
+        idx_4h: int,
+    ) -> Optional[StrategySetup]:
+        min_4h_idx = max(
+            params.compression_lookback_4h,
+            params.atr_long_period,
+            params.ema_slow_period,
+        )
+        min_1h_idx = max(params.breakout_lookback_1h, params.swing_lookback_1h, 6)
+        if idx_4h < min_4h_idx or idx_1h < min_1h_idx:
+            return None
+
+        current_1h = klines_1h[idx_1h]
+        previous_1h = klines_1h[idx_1h - 1]
+        recent_breakout = klines_1h[idx_1h - params.breakout_lookback_1h : idx_1h]
+        recent_ranges = [candle_range_value(candle) for candle in klines_1h[idx_1h - 6 : idx_1h]]
+        recent_4h_compression = klines_4h[idx_4h - params.compression_lookback_4h + 1 : idx_4h + 1]
+        recent_4h_short = klines_4h[idx_4h - params.atr_short_period : idx_4h + 1]
+        recent_4h_long = klines_4h[idx_4h - params.atr_long_period : idx_4h + 1]
+
+        if len(recent_breakout) < params.breakout_lookback_1h:
+            return None
+
+        trend = ema_trend_4h(
+            klines_4h,
+            idx_4h,
+            fast_period=params.ema_fast_period,
+            slow_period=params.ema_slow_period,
+        )
+        if trend == "FLAT":
+            return None
+
+        atr_short = calc_atr_from_klines(recent_4h_short, period=params.atr_short_period)
+        atr_long = calc_atr_from_klines(recent_4h_long, period=params.atr_long_period)
+        if atr_short <= 0 or atr_long <= 0:
+            return None
+
+        atr_ratio = atr_short / atr_long
+        if atr_ratio > params.max_atr_ratio:
+            return None
+
+        avg_recent_range = sum(recent_ranges) / len(recent_ranges) if recent_ranges else 0.0
+        current_range = candle_range_value(current_1h)
+        if avg_recent_range <= 0 or current_range < avg_recent_range * params.min_range_expansion:
+            return None
+
+        body_fraction = candle_body_fraction(current_1h)
+        if body_fraction < params.min_body_fraction:
+            return None
+
+        breakout_high = max(candle_high(candle) for candle in recent_breakout)
+        breakout_low = min(candle_low(candle) for candle in recent_breakout)
+        compression_high = max(candle_high(candle) for candle in recent_4h_compression)
+        compression_low = min(candle_low(candle) for candle in recent_4h_compression)
+        compression_width = compression_high - compression_low
+        if compression_width <= 0:
+            return None
+
+        entry = candle_close(current_1h)
+        expansion_factor = current_range / avg_recent_range if avg_recent_range > 0 else 0.0
+        compression_score = max(0.0, min(1.0, 1 - atr_ratio / max(params.max_atr_ratio, 1e-9)))
+        impulse_score = max(0.0, min(1.0, expansion_factor / max(params.min_range_expansion, 1e-9) - 0.2))
+        structure_score = 0.3
+
+        if (
+            trend == "UP"
+            and candle_close(previous_1h) <= breakout_high
+            and candle_close(current_1h) > breakout_high
+            and bullish_close(current_1h)
+        ):
+            side = "Buy"
+            level = breakout_high
+            stop = min(recent_low(klines_1h, idx_1h, params.swing_lookback_1h), breakout_high) - atr_long * params.stop_buffer_atr
+            risk = entry - stop
+            tp = entry + risk * params.rr_target
+        elif (
+            trend == "DOWN"
+            and candle_close(previous_1h) >= breakout_low
+            and candle_close(current_1h) < breakout_low
+            and bearish_close(current_1h)
+        ):
+            side = "Sell"
+            level = breakout_low
+            stop = max(recent_high(klines_1h, idx_1h, params.swing_lookback_1h), breakout_low) + atr_long * params.stop_buffer_atr
+            risk = stop - entry
+            tp = entry - risk * params.rr_target
+        else:
+            return None
+
+        if risk <= 0:
+            return None
+        if risk > atr_long * MAX_STOP_ATR * params.max_stop_multiplier:
+            return None
+        if risk < atr_long * LIVE_SL_BUFFER:
+            return None
+
+        reward = abs(tp - entry)
+        edge_score = calc_signal_score(
+            1.0,
+            1.0,
+            compression_score,
+            impulse_score,
+            structure_score,
+        )
+        return StrategySetup(
+            strategy="momentum_volatility_expansion",
+            side=side,
+            entry=entry,
+            stop=stop,
+            tp=tp,
+            atr_4h=atr_long,
+            level=level,
+            planned_rr=reward / risk,
+            impulse_ok=True,
+            meta={
+                "trend": trend,
+                "entry_pattern": "compression_breakout",
+                "compression_atr_ratio": round(atr_ratio, 6),
+                "compression_width": round(compression_width, 8),
+                "body_fraction": round(body_fraction, 6),
+                "expansion_factor": round(expansion_factor, 6),
+                "edge_score": round(edge_score, 6),
+                "params": {
+                    "breakout_lookback_1h": params.breakout_lookback_1h,
+                    "compression_lookback_4h": params.compression_lookback_4h,
+                    "atr_short_period": params.atr_short_period,
+                    "atr_long_period": params.atr_long_period,
+                    "max_atr_ratio": params.max_atr_ratio,
+                    "rr_target": params.rr_target,
+                    "stop_buffer_atr": params.stop_buffer_atr,
+                    "max_stop_multiplier": params.max_stop_multiplier,
+                    "ema_fast_period": params.ema_fast_period,
+                    "ema_slow_period": params.ema_slow_period,
+                    "min_body_fraction": params.min_body_fraction,
+                    "min_range_expansion": params.min_range_expansion,
+                    "swing_lookback_1h": params.swing_lookback_1h,
+                },
+            },
+        )
+
+    return strategy
+
+
 def make_range_mean_reversion_strategy(params: RangeMeanReversionParams):
     def strategy(
         klines_1h: List[List[Any]],
@@ -504,6 +693,7 @@ STRATEGIES = {
     "simple_trend_pullback": simple_trend_pullback,
     "breakout_retest": breakout_retest,
     "range_mean_reversion": range_mean_reversion,
+    "momentum_volatility_expansion": momentum_volatility_expansion,
 }
 
 
@@ -511,4 +701,5 @@ STRATEGY_DESCRIPTIONS = {
     "simple_trend_pullback": "4H trend + clean level + distance + impulse",
     "breakout_retest": "4H breakout with 1H retest confirmation",
     "range_mean_reversion": "4H flat range with 1H mean reversion entry",
+    "momentum_volatility_expansion": "4H compression + 1H breakout continuation",
 }
