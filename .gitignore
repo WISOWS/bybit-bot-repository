@@ -9,3 +9,4 @@ backtest_journal.csv
 trades.log
 ohlcv/
 research_results/
+runtime_archives/
