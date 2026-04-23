@@ -3,7 +3,7 @@ import csv
 import json
 import os
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple
 
 from backtest import (
     BACKTEST_SLIPPAGE_RATE,
@@ -104,22 +104,14 @@ def summarize_rows(rows: List[Dict[str, Any]], initial_balance: float) -> Dict[s
     }
 
 
-def run_strategy_backtest(
+def run_strategy_backtest_klines(
     strategy_name: str,
+    strategy_fn: Callable[[List[List[Any]], int, List[List[Any]], int], StrategySetup | None],
     symbol: str,
-    file_1h: str,
-    file_4h: str,
+    klines_1h: List[List[Any]],
+    klines_4h: List[List[Any]],
     initial_balance: float,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    klines_1h = load_ohlcv_csv(file_1h)
-    klines_4h = load_ohlcv_csv(file_4h)
-
-    if len(klines_1h) < 50:
-        raise ValueError("Недостаточно 1H данных")
-    if len(klines_4h) < 50:
-        raise ValueError("Недостаточно 4H данных")
-
-    strategy_fn = STRATEGIES[strategy_name]
     balance = initial_balance
     rows: List[Dict[str, Any]] = []
     times_4h = [int(row[0]) for row in klines_4h]
@@ -166,7 +158,7 @@ def run_strategy_backtest(
         note_payload = {
             "message": "research_backtest",
             "strategy": strategy_name,
-            "strategy_description": STRATEGY_DESCRIPTIONS[strategy_name],
+            "strategy_description": STRATEGY_DESCRIPTIONS.get(strategy_name, strategy_name),
             "effective_entry": round(effective_entry, 8),
             "effective_exit": round(effective_exit, 8),
             "entry_fee": round(entry_fee, 8),
@@ -203,6 +195,32 @@ def run_strategy_backtest(
         idx_1h = exit_index + 1
 
     return rows, summarize_rows(rows, initial_balance)
+
+
+def run_strategy_backtest(
+    strategy_name: str,
+    symbol: str,
+    file_1h: str,
+    file_4h: str,
+    initial_balance: float,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    klines_1h = load_ohlcv_csv(file_1h)
+    klines_4h = load_ohlcv_csv(file_4h)
+
+    if len(klines_1h) < 50:
+        raise ValueError("Недостаточно 1H данных")
+    if len(klines_4h) < 50:
+        raise ValueError("Недостаточно 4H данных")
+
+    strategy_fn = STRATEGIES[strategy_name]
+    return run_strategy_backtest_klines(
+        strategy_name=strategy_name,
+        strategy_fn=strategy_fn,
+        symbol=symbol,
+        klines_1h=klines_1h,
+        klines_4h=klines_4h,
+        initial_balance=initial_balance,
+    )
 
 
 def write_rows(path: str, rows: List[Dict[str, Any]]) -> None:
