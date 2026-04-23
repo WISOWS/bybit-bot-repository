@@ -44,6 +44,19 @@ class TrendPullbackParams:
     strict_trend_alignment: bool = False
 
 
+@dataclass(frozen=True)
+class BreakoutRetestParams:
+    breakout_lookback_4h: int = 20
+    rr_target: float = 2.8
+    stop_buffer_atr: float = 0.15
+    max_stop_multiplier: float = 1.3
+    retest_buffer_pct: float = 0.002
+    stop_lookback_1h: int = 5
+    ema_fast_period: int = 20
+    ema_slow_period: int = 50
+    require_directional_close: bool = True
+
+
 def candle_open(candle: List[Any]) -> float:
     return float(candle[1])
 
@@ -88,16 +101,23 @@ def recent_high(klines: List[List[Any]], idx: int, lookback: int) -> float:
     return max(candle_high(candle) for candle in klines[start : idx + 1])
 
 
-def ema_trend_4h(klines_4h: List[List[Any]], idx_4h: int) -> str:
-    if idx_4h < 49:
+def ema_trend_4h(
+    klines_4h: List[List[Any]],
+    idx_4h: int,
+    fast_period: int = 20,
+    slow_period: int = 50,
+) -> str:
+    if slow_period <= 0 or fast_period <= 0 or fast_period >= slow_period:
         return "FLAT"
-    closes = [candle_close(candle) for candle in klines_4h[idx_4h - 49 : idx_4h + 1]]
-    ema20 = ema(closes, 20)
-    ema50 = ema(closes, 50)
+    if idx_4h < slow_period - 1:
+        return "FLAT"
+    closes = [candle_close(candle) for candle in klines_4h[idx_4h - slow_period + 1 : idx_4h + 1]]
+    ema_fast = ema(closes, fast_period)
+    ema_slow = ema(closes, slow_period)
     last_close = closes[-1]
-    if ema20 > ema50 and last_close >= ema20:
+    if ema_fast > ema_slow and last_close >= ema_fast:
         return "UP"
-    if ema20 < ema50 and last_close <= ema20:
+    if ema_fast < ema_slow and last_close <= ema_fast:
         return "DOWN"
     return "FLAT"
 
@@ -247,80 +267,119 @@ def breakout_retest(
     klines_4h: List[List[Any]],
     idx_4h: int,
 ) -> Optional[StrategySetup]:
-    if idx_4h < 25 or idx_1h < 2:
-        return None
-
-    current_1h = klines_1h[idx_1h]
-    previous_1h = klines_1h[idx_1h - 1]
-    recent_4h_20 = klines_4h[idx_4h - 20 : idx_4h]
-    recent_4h_15 = klines_4h[idx_4h - 14 : idx_4h + 1]
-
-    if not recent_4h_20:
-        return None
-
-    trend = ema_trend_4h(klines_4h, idx_4h)
-    if trend == "FLAT":
-        return None
-
-    breakout_high = max(candle_high(candle) for candle in recent_4h_20)
-    breakout_low = min(candle_low(candle) for candle in recent_4h_20)
-    atr_4h = calc_atr_from_klines(recent_4h_15, period=14)
-    if atr_4h <= 0:
-        return None
-
-    entry = candle_close(current_1h)
-
-    if (
-        trend == "UP"
-        and candle_close(previous_1h) > breakout_high
-        and candle_low(current_1h) <= breakout_high * 1.002
-        and candle_close(current_1h) > breakout_high
-        and bullish_close(current_1h)
-    ):
-        side = "Buy"
-        level = breakout_high
-        stop = min(recent_low(klines_1h, idx_1h, 5), breakout_high) - atr_4h * 0.15
-        risk = entry - stop
-        tp = entry + risk * 2.8
-    elif (
-        trend == "DOWN"
-        and candle_close(previous_1h) < breakout_low
-        and candle_high(current_1h) >= breakout_low * 0.998
-        and candle_close(current_1h) < breakout_low
-        and bearish_close(current_1h)
-    ):
-        side = "Sell"
-        level = breakout_low
-        stop = max(recent_high(klines_1h, idx_1h, 5), breakout_low) + atr_4h * 0.15
-        risk = stop - entry
-        tp = entry - risk * 2.8
-    else:
-        return None
-
-    if risk <= 0:
-        return None
-    if risk > atr_4h * MAX_STOP_ATR * 1.3:
-        return None
-    if risk < atr_4h * LIVE_SL_BUFFER:
-        return None
-
-    reward = abs(tp - entry)
-    return StrategySetup(
-        strategy="breakout_retest",
-        side=side,
-        entry=entry,
-        stop=stop,
-        tp=tp,
-        atr_4h=atr_4h,
-        level=level,
-        planned_rr=reward / risk,
-        impulse_ok=True,
-        meta={
-            "trend": trend,
-            "entry_pattern": "breakout_retest",
-            "edge_score": None,
-        },
+    return make_breakout_retest_strategy(BreakoutRetestParams())(
+        klines_1h,
+        idx_1h,
+        klines_4h,
+        idx_4h,
     )
+
+
+def make_breakout_retest_strategy(params: BreakoutRetestParams):
+    def strategy(
+        klines_1h: List[List[Any]],
+        idx_1h: int,
+        klines_4h: List[List[Any]],
+        idx_4h: int,
+    ) -> Optional[StrategySetup]:
+        min_4h_idx = max(params.breakout_lookback_4h + 1, params.ema_slow_period)
+        if idx_4h < min_4h_idx or idx_1h < 2:
+            return None
+
+        current_1h = klines_1h[idx_1h]
+        previous_1h = klines_1h[idx_1h - 1]
+        recent_4h = klines_4h[idx_4h - params.breakout_lookback_4h : idx_4h]
+        recent_4h_15 = klines_4h[idx_4h - 14 : idx_4h + 1]
+
+        if len(recent_4h) < params.breakout_lookback_4h:
+            return None
+
+        trend = ema_trend_4h(
+            klines_4h,
+            idx_4h,
+            fast_period=params.ema_fast_period,
+            slow_period=params.ema_slow_period,
+        )
+        if trend == "FLAT":
+            return None
+
+        breakout_high = max(candle_high(candle) for candle in recent_4h)
+        breakout_low = min(candle_low(candle) for candle in recent_4h)
+        atr_4h = calc_atr_from_klines(recent_4h_15, period=14)
+        if atr_4h <= 0:
+            return None
+
+        entry = candle_close(current_1h)
+        buffer_up = breakout_high * (1 + params.retest_buffer_pct)
+        buffer_down = breakout_low * (1 - params.retest_buffer_pct)
+
+        buy_confirm = bullish_close(current_1h) if params.require_directional_close else True
+        sell_confirm = bearish_close(current_1h) if params.require_directional_close else True
+
+        if (
+            trend == "UP"
+            and candle_close(previous_1h) > breakout_high
+            and candle_low(current_1h) <= buffer_up
+            and candle_close(current_1h) > breakout_high
+            and buy_confirm
+        ):
+            side = "Buy"
+            level = breakout_high
+            stop = min(recent_low(klines_1h, idx_1h, params.stop_lookback_1h), breakout_high) - atr_4h * params.stop_buffer_atr
+            risk = entry - stop
+            tp = entry + risk * params.rr_target
+        elif (
+            trend == "DOWN"
+            and candle_close(previous_1h) < breakout_low
+            and candle_high(current_1h) >= buffer_down
+            and candle_close(current_1h) < breakout_low
+            and sell_confirm
+        ):
+            side = "Sell"
+            level = breakout_low
+            stop = max(recent_high(klines_1h, idx_1h, params.stop_lookback_1h), breakout_low) + atr_4h * params.stop_buffer_atr
+            risk = stop - entry
+            tp = entry - risk * params.rr_target
+        else:
+            return None
+
+        if risk <= 0:
+            return None
+        if risk > atr_4h * MAX_STOP_ATR * params.max_stop_multiplier:
+            return None
+        if risk < atr_4h * LIVE_SL_BUFFER:
+            return None
+
+        reward = abs(tp - entry)
+        return StrategySetup(
+            strategy="breakout_retest",
+            side=side,
+            entry=entry,
+            stop=stop,
+            tp=tp,
+            atr_4h=atr_4h,
+            level=level,
+            planned_rr=reward / risk,
+            impulse_ok=True,
+            meta={
+                "trend": trend,
+                "entry_pattern": "breakout_retest",
+                "edge_score": None,
+                "params": {
+                    "breakout_lookback_4h": params.breakout_lookback_4h,
+                    "rr_target": params.rr_target,
+                    "stop_buffer_atr": params.stop_buffer_atr,
+                    "max_stop_multiplier": params.max_stop_multiplier,
+                    "retest_buffer_pct": params.retest_buffer_pct,
+                    "stop_lookback_1h": params.stop_lookback_1h,
+                    "ema_fast_period": params.ema_fast_period,
+                    "ema_slow_period": params.ema_slow_period,
+                    "require_directional_close": params.require_directional_close,
+                },
+            },
+        )
+
+    return strategy
 
 
 def range_mean_reversion(

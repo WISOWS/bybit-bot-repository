@@ -11,4 +11,8 @@ ohlcv/
 research_results/
 research_search/
 research_search_small/
+research_search_breakout/
+research_search_breakout_small/
+research_search_breakout_quick/
+research_search_breakout_soft/
 runtime_archives/
