@@ -21,4 +21,7 @@ research_search_mean_reversion_fast/
 research_search_momentum/
 research_search_momentum_quick/
 research_search_momentum_soft/
+research_search_regime/
+research_search_regime_quick/
+research_search_regime_refine/
 runtime_archives/

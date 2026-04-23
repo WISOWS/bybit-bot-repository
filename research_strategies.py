@@ -86,6 +86,23 @@ class MomentumExpansionParams:
     swing_lookback_1h: int = 4
 
 
+@dataclass(frozen=True)
+class RegimeSwitchParams:
+    trend_threshold: float = 0.7
+    trend_min_distance_score: float = 0.5
+    trend_rr_target: float = 3.2
+    trend_stop_buffer_atr: float = 0.25
+    trend_max_stop_multiplier: float = 1.3
+    range_flat_lookback_4h: int = 24
+    range_lookback_4h: int = 20
+    range_zone_fraction: float = 0.08
+    range_stop_buffer_atr: float = 0.15
+    range_target_fraction: float = 0.5
+    range_min_rr: float = 1.3
+    range_max_stop_multiplier: float = 1.0
+    regime_lookback_4h: int = 30
+
+
 def candle_open(candle: List[Any]) -> float:
     return float(candle[1])
 
@@ -450,6 +467,109 @@ def momentum_volatility_expansion(
     )
 
 
+def regime_switch_hybrid(
+    klines_1h: List[List[Any]],
+    idx_1h: int,
+    klines_4h: List[List[Any]],
+    idx_4h: int,
+) -> Optional[StrategySetup]:
+    return make_regime_switch_strategy(RegimeSwitchParams())(
+        klines_1h,
+        idx_1h,
+        klines_4h,
+        idx_4h,
+    )
+
+
+def make_regime_switch_strategy(params: RegimeSwitchParams):
+    trend_strategy = make_simple_trend_pullback_strategy(
+        TrendPullbackParams(
+            threshold=params.trend_threshold,
+            min_distance_score=params.trend_min_distance_score,
+            rr_target=params.trend_rr_target,
+            stop_buffer_atr=params.trend_stop_buffer_atr,
+            max_stop_multiplier=params.trend_max_stop_multiplier,
+            require_impulse=True,
+            require_clean_level=True,
+            require_structure_touch=False,
+            strict_trend_alignment=False,
+        )
+    )
+    range_strategy = make_range_mean_reversion_strategy(
+        RangeMeanReversionParams(
+            flat_lookback_4h=params.range_flat_lookback_4h,
+            range_lookback_4h=params.range_lookback_4h,
+            zone_fraction=params.range_zone_fraction,
+            stop_buffer_atr=params.range_stop_buffer_atr,
+            target_fraction=params.range_target_fraction,
+            min_rr=params.range_min_rr,
+            max_stop_multiplier=params.range_max_stop_multiplier,
+            require_directional_close=True,
+        )
+    )
+
+    def strategy(
+        klines_1h: List[List[Any]],
+        idx_1h: int,
+        klines_4h: List[List[Any]],
+        idx_4h: int,
+    ) -> Optional[StrategySetup]:
+        if idx_4h < params.regime_lookback_4h - 1:
+            return None
+
+        recent_regime = klines_4h[idx_4h - params.regime_lookback_4h + 1 : idx_4h + 1]
+        regime = detect_trend_4h(recent_regime)
+
+        if regime == "FLAT":
+            setup = range_strategy(klines_1h, idx_1h, klines_4h, idx_4h)
+            if setup is None:
+                return None
+            setup.strategy = "regime_switch_hybrid"
+            setup.meta["regime"] = "FLAT"
+            setup.meta["sub_strategy"] = "range_mean_reversion"
+            setup.meta["params"] = {
+                "trend_threshold": params.trend_threshold,
+                "trend_min_distance_score": params.trend_min_distance_score,
+                "trend_rr_target": params.trend_rr_target,
+                "trend_stop_buffer_atr": params.trend_stop_buffer_atr,
+                "trend_max_stop_multiplier": params.trend_max_stop_multiplier,
+                "range_flat_lookback_4h": params.range_flat_lookback_4h,
+                "range_lookback_4h": params.range_lookback_4h,
+                "range_zone_fraction": params.range_zone_fraction,
+                "range_stop_buffer_atr": params.range_stop_buffer_atr,
+                "range_target_fraction": params.range_target_fraction,
+                "range_min_rr": params.range_min_rr,
+                "range_max_stop_multiplier": params.range_max_stop_multiplier,
+                "regime_lookback_4h": params.regime_lookback_4h,
+            }
+            return setup
+
+        setup = trend_strategy(klines_1h, idx_1h, klines_4h, idx_4h)
+        if setup is None:
+            return None
+        setup.strategy = "regime_switch_hybrid"
+        setup.meta["regime"] = regime
+        setup.meta["sub_strategy"] = "simple_trend_pullback"
+        setup.meta["params"] = {
+            "trend_threshold": params.trend_threshold,
+            "trend_min_distance_score": params.trend_min_distance_score,
+            "trend_rr_target": params.trend_rr_target,
+            "trend_stop_buffer_atr": params.trend_stop_buffer_atr,
+            "trend_max_stop_multiplier": params.trend_max_stop_multiplier,
+            "range_flat_lookback_4h": params.range_flat_lookback_4h,
+            "range_lookback_4h": params.range_lookback_4h,
+            "range_zone_fraction": params.range_zone_fraction,
+            "range_stop_buffer_atr": params.range_stop_buffer_atr,
+            "range_target_fraction": params.range_target_fraction,
+            "range_min_rr": params.range_min_rr,
+            "range_max_stop_multiplier": params.range_max_stop_multiplier,
+            "regime_lookback_4h": params.regime_lookback_4h,
+        }
+        return setup
+
+    return strategy
+
+
 def make_momentum_expansion_strategy(params: MomentumExpansionParams):
     def strategy(
         klines_1h: List[List[Any]],
@@ -694,6 +814,7 @@ STRATEGIES = {
     "breakout_retest": breakout_retest,
     "range_mean_reversion": range_mean_reversion,
     "momentum_volatility_expansion": momentum_volatility_expansion,
+    "regime_switch_hybrid": regime_switch_hybrid,
 }
 
 
@@ -702,4 +823,5 @@ STRATEGY_DESCRIPTIONS = {
     "breakout_retest": "4H breakout with 1H retest confirmation",
     "range_mean_reversion": "4H flat range with 1H mean reversion entry",
     "momentum_volatility_expansion": "4H compression + 1H breakout continuation",
+    "regime_switch_hybrid": "Trend pullback in trend, mean reversion in flat regime",
 }
