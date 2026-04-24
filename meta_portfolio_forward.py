@@ -57,6 +57,11 @@ LOG_PATH = os.path.join(BASE_DIR, "meta_portfolio.log")
 # authoritative reject_reason/debug metadata and remove the mirrored
 # _explain_* helpers below, which currently duplicate rejection logic from
 # /Users/egor/bybit-bot/research_strategies.py and can drift over time.
+# Known fragility: helpers also depend on hardcoded flags
+# (require_impulse, require_clean_level, require_directional_close,
+# strict_trend_alignment, require_structure_touch) that are set inside
+# make_regime_switch_strategy() in research_strategies.py and are NOT read
+# from model.params. If those flags change there, this file must be updated.
 
 FORWARD_RUNNER_NAME = "meta_portfolio_forward_v1"
 DEFAULT_SYMBOLS = "NEARUSDT,SOLUSDT,LINKUSDT,ENAUSDT"
@@ -152,8 +157,6 @@ def _explain_trend_setup_none(model: Any, klines_1h: List[List[Any]], klines_4h:
         (trend == "UP" and entry >= level)
         or (trend == "DOWN" and entry <= level)
     ) else 0.3
-    if model.params.strict_trend_alignment and trend_score < 1.0:
-        return "no_trend_setup:strict_trend_alignment_failed"
 
     distance_score = (
         max(0.1, 1 - abs(entry - level) / max_level_distance) if max_level_distance > 0 else 0.1
@@ -265,9 +268,19 @@ def _explain_range_setup_none(model: Any, klines_1h: List[List[Any]], klines_4h:
 
 
 def _explain_strategy_none(model: Any, klines_1h: List[List[Any]], klines_4h: List[List[Any]], regime_4h: str) -> str:
-    if regime_4h == "FLAT":
-        return _explain_range_setup_none(model, klines_1h, klines_4h)
-    return _explain_trend_setup_none(model, klines_1h, klines_4h)
+    try:
+        if regime_4h == "FLAT":
+            return _explain_range_setup_none(model, klines_1h, klines_4h)
+        return _explain_trend_setup_none(model, klines_1h, klines_4h)
+    except Exception as exc:
+        logger.warning(
+            "%s[%s]: explain helper failed for regime_4h=%s",
+            model.symbol,
+            model.name,
+            regime_4h,
+            exc_info=True,
+        )
+        return f"explain_error:{type(exc).__name__}"
 
 
 def normalize_symbols_list(raw: str) -> List[str]:
