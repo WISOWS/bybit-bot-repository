@@ -47,6 +47,7 @@ from main import (
 )
 from research_search_meta_portfolio import MODEL_SPECS, btc_mode_ok, build_4h_index, hot_vol_ratio_at
 from research_strategies import make_regime_switch_strategy
+from telegram_notifier import notify
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -83,6 +84,78 @@ if not logger.handlers:
     logger.addHandler(file_handler)
     logger.addHandler(stream_handler)
     logger.propagate = False
+
+
+def _safe_notify(message: str, level: str = "info") -> None:
+    try:
+        notify(message, level=level)
+    except Exception:
+        logger.warning("Telegram notify wrapper failed", exc_info=True)
+
+
+def _closed_trade_key(row: Dict[str, Any]) -> Tuple[str, str, str, str, str]:
+    return (
+        str(row.get("timestamp", "")),
+        str(row.get("symbol", "")).upper(),
+        str(row.get("side", "")),
+        str(row.get("model_name", "")),
+        str(row.get("signal_time_ms", "")),
+    )
+
+
+def _is_forward_closed_row(row: Dict[str, Any]) -> bool:
+    return (
+        str(row.get("forward_runner", "")) == FORWARD_RUNNER_NAME
+        and bool(str(row.get("realized_pnl", "")).strip())
+    )
+
+
+def _load_known_closed_forward_keys() -> Set[Tuple[str, str, str, str, str]]:
+    keys: Set[Tuple[str, str, str, str, str]] = set()
+    for row in load_journal_rows(JOURNAL_PATH):
+        if _is_forward_closed_row(row):
+            keys.add(_closed_trade_key(row))
+    return keys
+
+
+def _collect_newly_closed_forward_rows(
+    seen_closed_keys: Set[Tuple[str, str, str, str, str]]
+) -> List[Dict[str, Any]]:
+    newly_closed: List[Dict[str, Any]] = []
+    for row in load_journal_rows(JOURNAL_PATH):
+        if not _is_forward_closed_row(row):
+            continue
+        trade_key = _closed_trade_key(row)
+        if trade_key in seen_closed_keys:
+            continue
+        seen_closed_keys.add(trade_key)
+        newly_closed.append(row)
+    return newly_closed
+
+
+def _derive_close_reason(row: Dict[str, Any], pnl: float) -> str:
+    if pnl > 0:
+        return "profit"
+    if pnl < 0:
+        return "loss"
+    return "flat"
+
+
+def _notify_closed_forward_rows(rows: List[Dict[str, Any]]) -> None:
+    for row in rows:
+        try:
+            pnl = float(row.get("realized_pnl", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            continue
+
+        symbol = str(row.get("symbol", "")).upper()
+        side = str(row.get("side", ""))
+        close_reason = _derive_close_reason(row, pnl)
+        level = "info" if pnl >= 0 else "warning"
+        _safe_notify(
+            f"Closed {symbol} {side} pnl={pnl:.2f} USDT reason={close_reason}",
+            level=level,
+        )
 
 
 def _fmt_ratio(value: float | None) -> str:
@@ -639,6 +712,11 @@ def process_model(
         "n/a" if hot_vol_ratio is None else f"{hot_vol_ratio:.3f}",
         setup.meta.get("regime"),
     )
+    _safe_notify(
+        f"Opened {setup.side} {model.symbol} qty={qty_str} entry≈{live_price:.6f} "
+        f"SL={stop_str} TP={tp_str} risk={planned_risk_usdt:.2f} USDT",
+        level="info",
+    )
     return True
 
 
@@ -655,10 +733,12 @@ def main() -> None:
     models = selected_models(normalize_symbols_list(args.symbols))
     client = BybitClient(BYBIT_API_KEY, BYBIT_API_SECRET, BASE_URL)
     models, btc_symbol = validate_runtime(client, models, args.btc_symbol)
+    seen_closed_keys = _load_known_closed_forward_keys()
 
     synced_rows = sync_closed_trades_to_journal(client)
     if synced_rows > 0:
         logger.info("Журнал синхронизирован: обновлено закрытых сделок %s", synced_rows)
+        _notify_closed_forward_rows(_collect_newly_closed_forward_rows(seen_closed_keys))
 
     logger.info(
         "Старт meta forward MODE=%s base_url=%s leverage=%s risk=%.2f%% config=%s models=%s btc_mode=%s hot_vol>=%.2f max_concurrent=%s",
@@ -672,11 +752,17 @@ def main() -> None:
         args.min_hot_vol_ratio,
         args.max_concurrent,
     )
+    _safe_notify(
+        f"Bot started: {len(models)} models, max_concurrent={args.max_concurrent}, "
+        f"hot_vol>={args.min_hot_vol_ratio:.2f}, btc_mode={args.btc_mode}",
+        level="info",
+    )
 
     while True:
         synced_rows = sync_closed_trades_to_journal(client)
         if synced_rows > 0:
             logger.info("Журнал синхронизирован: обновлено закрытых сделок %s", synced_rows)
+            _notify_closed_forward_rows(_collect_newly_closed_forward_rows(seen_closed_keys))
 
         btc_4h = client.get_kline(btc_symbol, TIMEFRAME_TREND, limit=250, closed_only=True)
         if len(btc_4h) < 30:
@@ -708,6 +794,10 @@ def main() -> None:
                     open_count += 1
             except Exception as exc:
                 logger.exception("Ошибка при обработке %s[%s]: %s", model.symbol, model.name, exc)
+                _safe_notify(
+                    f"Error processing {model.symbol}: {type(exc).__name__}: {exc}",
+                    level="error",
+                )
 
         logger.info("Цикл meta-портфеля завершён, спим %s секунд", args.sleep_seconds)
         time.sleep(args.sleep_seconds)
