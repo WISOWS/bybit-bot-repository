@@ -549,6 +549,16 @@ def process_model(
             tp_str,
         )
         return False
+    if risk < live_price * 0.003:
+        logger.info(
+            "%s[%s]: reject=sl_too_tight entry=%.6f stop=%s min_distance=%.6f",
+            model.symbol,
+            model.name,
+            live_price,
+            stop_str,
+            live_price * 0.003,
+        )
+        return False
 
     balance_info = client.get_usdt_balance_info("USDT")
     wallet_balance = float(balance_info.get("walletBalance", 0) or 0)
