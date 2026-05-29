@@ -87,6 +87,16 @@ MODEL_SPECS: List[ModelSpec] = [
         symbol="SUIUSDT",
         params=RegimeSwitchParams(),
     ),
+    # --- Боты #3/#4/#5, DEMO forward. Дефолтные RegimeSwitchParams; калибровку позже. ---
+    ModelSpec(name="atom_regime_default", symbol="ATOMUSDT", params=RegimeSwitchParams()),  # bot #3
+    ModelSpec(name="inj_regime_default", symbol="INJUSDT", params=RegimeSwitchParams()),    # bot #3
+    ModelSpec(name="tia_regime_default", symbol="TIAUSDT", params=RegimeSwitchParams()),    # bot #3
+    ModelSpec(name="dot_regime_default", symbol="DOTUSDT", params=RegimeSwitchParams()),    # bot #4
+    ModelSpec(name="avax_regime_default", symbol="AVAXUSDT", params=RegimeSwitchParams()),  # bot #4
+    ModelSpec(name="rune_regime_default", symbol="RUNEUSDT", params=RegimeSwitchParams()),  # bot #4
+    ModelSpec(name="op_regime_default", symbol="OPUSDT", params=RegimeSwitchParams()),      # bot #5
+    ModelSpec(name="arb_regime_default", symbol="ARBUSDT", params=RegimeSwitchParams()),    # bot #5
+    ModelSpec(name="ton_regime_default", symbol="TONUSDT", params=RegimeSwitchParams()),    # bot #5
 ]
 
 

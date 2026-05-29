@@ -1,0 +1,20 @@
+[Unit]
+Description=Bybit Bot #3 (meta portfolio forward, DEMO) — ATOM/INJ/TIA
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# --- ЗАМЕНИ под свой VPS ---
+User=ubuntu
+WorkingDirectory=/home/ubuntu/bybit-bot
+Environment=BYBIT_CONFIG_FILE=config_bot3.json
+Environment=BYBIT_ENV_FILE=.env_bot3
+ExecStart=/home/ubuntu/bybit-bot/.venv/bin/python /home/ubuntu/bybit-bot/meta_portfolio_forward_bot3.py --symbols ATOMUSDT,INJUSDT,TIAUSDT --max-concurrent 3
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/home/ubuntu/bybit-bot/bot3.out.log
+StandardError=append:/home/ubuntu/bybit-bot/bot3.err.log
+
+[Install]
+WantedBy=multi-user.target

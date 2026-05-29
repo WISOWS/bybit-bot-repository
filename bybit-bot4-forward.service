@@ -1,0 +1,20 @@
+[Unit]
+Description=Bybit Bot #4 (meta portfolio forward, DEMO) — DOT/AVAX/RUNE
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# --- ЗАМЕНИ под свой VPS ---
+User=ubuntu
+WorkingDirectory=/home/ubuntu/bybit-bot
+Environment=BYBIT_CONFIG_FILE=config_bot4.json
+Environment=BYBIT_ENV_FILE=.env_bot4
+ExecStart=/home/ubuntu/bybit-bot/.venv/bin/python /home/ubuntu/bybit-bot/meta_portfolio_forward_bot4.py --symbols DOTUSDT,AVAXUSDT,RUNEUSDT --max-concurrent 3
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/home/ubuntu/bybit-bot/bot4.out.log
+StandardError=append:/home/ubuntu/bybit-bot/bot4.err.log
+
+[Install]
+WantedBy=multi-user.target

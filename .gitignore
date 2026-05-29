@@ -1,6 +1,9 @@
 .DS_Store
 .env
 .env_bot2
+.env_bot3
+.env_bot4
+.env_bot5
 __pycache__/
 *.pyc
 
