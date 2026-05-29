@@ -25,8 +25,8 @@ except ImportError:
 # -------------------- Пути и конфиг --------------------
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ENV_PATH = os.path.join(BASE_DIR, ".env")
-CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
+ENV_PATH = os.path.join(BASE_DIR, os.getenv("BYBIT_ENV_FILE", ".env"))
+CONFIG_PATH = os.path.join(BASE_DIR, os.getenv("BYBIT_CONFIG_FILE", "config.json"))
 CONFIG_EXAMPLE_PATH = os.path.join(BASE_DIR, "config.example.json")
 
 load_dotenv(ENV_PATH)
@@ -87,6 +87,7 @@ else:
     MAX_POSITIONS_PER_DIRECTION = int(CONFIG.get("max_positions_per_direction", 5))
 MIN_LIVE_TRADES_FOR_ADAPTIVE_WEIGHTS = int(CONFIG.get("min_live_trades_for_adaptive_weights", 30))
 REQUEST_RECV_WINDOW_MS = int(CONFIG.get("recv_window_ms", 20000))
+MAX_CONCURRENT = int(CONFIG.get("max_concurrent", 1000))
 
 LOG_PATH = os.path.join(BASE_DIR, "trades.log")
 JOURNAL_PATH = os.path.join(BASE_DIR, "journal.csv")
@@ -534,6 +535,19 @@ class BybitClient:
             return None
 
         return non_empty[0] if non_empty else None
+
+    def count_open_positions(self) -> int:
+        """Число открытых USDT-перп позиций по всему счёту (один запрос)."""
+        params = {"category": "linear", "settleCoin": "USDT"}
+        data = self._request("GET", "/v5/position/list", params, auth=True)
+        items = data.get("result", {}).get("list", []) or []
+        count = 0
+        for item in items:
+            size = parse_decimal(item.get("size", "0"))
+            pos_side = str(item.get("side", "") or "")
+            if size > 0 and pos_side in {"Buy", "Sell"}:
+                count += 1
+        return count
 
     def set_trading_stop(
         self,
@@ -1732,6 +1746,16 @@ def process_symbol(client: BybitClient, symbol: str, today_trades: int) -> int:
         size = float(existing_pos.get("size", 0) or 0)
         side = existing_pos.get("side")
         logger.info("%s: уже есть открытая позиция side=%s size=%s, новые входы запрещены", symbol, side, size)
+        return today_trades
+
+    open_positions = client.count_open_positions()
+    if open_positions >= MAX_CONCURRENT:
+        logger.info(
+            "%s: достигнут лимит одновременных позиций %s/%s, новые входы запрещены",
+            symbol,
+            open_positions,
+            MAX_CONCURRENT,
+        )
         return today_trades
 
     klines_4h = client.get_kline(symbol, TIMEFRAME_TREND, limit=250, closed_only=True)

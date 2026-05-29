@@ -70,6 +70,23 @@ MODEL_SPECS: List[ModelSpec] = [
             range_target_fraction=0.7,
         ),
     ),
+    # --- Бот #2 (ONDO/ZEC/SUI), DEMO forward. Дефолтные RegimeSwitchParams,
+    # как в портфельном бэктесте; калибровку под пару сделать позже. ---
+    ModelSpec(
+        name="ondo_regime_default",
+        symbol="ONDOUSDT",
+        params=RegimeSwitchParams(),
+    ),
+    ModelSpec(
+        name="zec_regime_default",
+        symbol="ZECUSDT",
+        params=RegimeSwitchParams(),
+    ),
+    ModelSpec(
+        name="sui_regime_default",
+        symbol="SUIUSDT",
+        params=RegimeSwitchParams(),
+    ),
 ]
 
 

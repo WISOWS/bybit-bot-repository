@@ -1,0 +1,22 @@
+[Unit]
+Description=Bybit Bot #2 (meta portfolio forward, DEMO) — ONDO/ZEC/SUI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# --- ЗАМЕНИ под свой VPS ---
+User=ubuntu
+WorkingDirectory=/home/ubuntu/bybit-bot
+# Путь конфига/.env для бота #2 (подхватываются main.py при импорте):
+Environment=BYBIT_CONFIG_FILE=config_bot2.json
+Environment=BYBIT_ENV_FILE=.env_bot2
+# Если есть venv — укажи его python; иначе /usr/bin/python3:
+ExecStart=/home/ubuntu/bybit-bot/.venv/bin/python /home/ubuntu/bybit-bot/meta_portfolio_forward_bot2.py --symbols ONDOUSDT,ZECUSDT,SUIUSDT --max-concurrent 3
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/home/ubuntu/bybit-bot/bot2.out.log
+StandardError=append:/home/ubuntu/bybit-bot/bot2.err.log
+
+[Install]
+WantedBy=multi-user.target
