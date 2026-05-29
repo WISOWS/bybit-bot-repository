@@ -1,5 +1,6 @@
 .DS_Store
 .env
+.env_bot2
 __pycache__/
 *.pyc
 
