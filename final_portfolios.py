@@ -16,7 +16,7 @@ BOTS = [
     ("#1", ["NEARUSDT", "SOLUSDT", "LINKUSDT", "ENAUSDT"], 0.0025, 2),
     ("#2", ["ONDOUSDT", "ZECUSDT", "SUIUSDT"], 0.007, 3),
     ("#3", ["ATOMUSDT", "INJUSDT", "TIAUSDT"], 0.007, 3),
-    ("#4", ["APTUSDT", "INJUSDT", "TIAUSDT"], 0.007, 3),
+    ("#4", ["DOTUSDT", "AVAXUSDT", "RUNEUSDT"], 0.0065, 3),
     ("#5", ["OPUSDT", "ARBUSDT", "TONUSDT"], 0.007, 3),
 ]
 IS_WIN = (P.to_ms("2023-06-01"), P.to_ms("2025-01-01"))
