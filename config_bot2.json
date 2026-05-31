@@ -1,5 +1,5 @@
 {
-  "risk_per_trade": 0.007,
+  "risk_per_trade": 0.0065,
   "leverage": 5,
   "enable_adaptive_runtime": false,
   "enable_adaptive_analytics": false,
