@@ -20,6 +20,17 @@ logger = logging.getLogger("meta_portfolio_forward.telegram")
 TELEGRAM_BOT_TOKEN = str(os.getenv("TELEGRAM_BOT_TOKEN", "")).strip()
 TELEGRAM_CHAT_ID = str(os.getenv("TELEGRAM_CHAT_ID", "")).strip()
 
+# Префикс с номером бота. Управляется BYBIT_BOT_NUMBER (1..5);
+# если не задана или значение неизвестное — префикса нет.
+BOT_NUMBER = str(os.getenv("BYBIT_BOT_NUMBER", "")).strip()
+BOT_PREFIX = {
+    "1": "🟢 БОТ #1:",
+    "2": "🔵 БОТ #2:",
+    "3": "🟠 БОТ #3:",
+    "4": "🟣 БОТ #4:",
+    "5": "🟡 БОТ #5:",
+}.get(BOT_NUMBER, "")
+
 TELEGRAM_TIMEOUT_SEC = 5
 MESSAGE_DEDUP_WINDOW_SEC = 60.0
 ERROR_LOG_DEDUP_WINDOW_SEC = 300.0
@@ -117,7 +128,7 @@ def notify(message: str, level: str = "info") -> None:
         return
 
     prefix = LEVEL_PREFIX.get(level, LEVEL_PREFIX["info"])
-    formatted_message = f"{prefix} {text}"
+    formatted_message = f"{BOT_PREFIX} {prefix} {text}" if BOT_PREFIX else f"{prefix} {text}"
 
     if _should_skip_duplicate_message(formatted_message):
         return
@@ -142,7 +153,8 @@ def _cli() -> int:
         _warn_missing_config_once()
         return 1
     try:
-        _send_formatted_message_sync(f"{LEVEL_PREFIX['info']} {text}")
+        formatted = f"{BOT_PREFIX} {LEVEL_PREFIX['info']} {text}" if BOT_PREFIX else f"{LEVEL_PREFIX['info']} {text}"
+        _send_formatted_message_sync(formatted)
         return 0
     except Exception as exc:
         _log_send_error_once(exc)
