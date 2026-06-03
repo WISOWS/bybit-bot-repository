@@ -12,8 +12,9 @@ from dotenv import load_dotenv
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ENV_PATH = os.path.join(BASE_DIR, ".env")
-load_dotenv(ENV_PATH)
+ENV_FILE = os.getenv("BYBIT_ENV_FILE", ".env")
+ENV_PATH = os.path.join(BASE_DIR, ENV_FILE)
+load_dotenv(ENV_PATH, override=True)
 
 logger = logging.getLogger("meta_portfolio_forward.telegram")
 
