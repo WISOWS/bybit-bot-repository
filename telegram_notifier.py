@@ -8,22 +8,19 @@ from typing import Dict
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from dotenv import load_dotenv
-
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ENV_FILE = os.getenv("BYBIT_ENV_FILE", ".env")
-ENV_PATH = os.path.join(BASE_DIR, ENV_FILE)
-load_dotenv(ENV_PATH, override=True)
 
 logger = logging.getLogger("meta_portfolio_forward.telegram")
 
-TELEGRAM_BOT_TOKEN = str(os.getenv("TELEGRAM_BOT_TOKEN", "")).strip()
-TELEGRAM_CHAT_ID = str(os.getenv("TELEGRAM_CHAT_ID", "")).strip()
+# ВАЖНО: здесь НЕ вызываем load_dotenv. Переменные окружения уже загружены
+# в main.py из нужного файла (BYBIT_ENV_FILE) ещё до импорта этого модуля.
+# Читаем напрямую из os.environ, чтобы каждый бот использовал СВОЙ токен,
+# а не общий .env бота #1.
+TELEGRAM_BOT_TOKEN = str(os.environ.get("TELEGRAM_BOT_TOKEN", "")).strip()
+TELEGRAM_CHAT_ID = str(os.environ.get("TELEGRAM_CHAT_ID", "")).strip()
 
 # Префикс с номером бота. Управляется BYBIT_BOT_NUMBER (1..5);
 # если не задана или значение неизвестное — префикса нет.
-BOT_NUMBER = str(os.getenv("BYBIT_BOT_NUMBER", "")).strip()
+BOT_NUMBER = str(os.environ.get("BYBIT_BOT_NUMBER", "")).strip()
 BOT_PREFIX = {
     "1": "🟢 БОТ #1:",
     "2": "🔵 БОТ #2:",
