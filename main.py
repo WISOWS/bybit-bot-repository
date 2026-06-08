@@ -29,7 +29,10 @@ ENV_PATH = os.path.join(BASE_DIR, os.getenv("BYBIT_ENV_FILE", ".env"))
 CONFIG_PATH = os.path.join(BASE_DIR, os.getenv("BYBIT_CONFIG_FILE", "config.json"))
 CONFIG_EXAMPLE_PATH = os.path.join(BASE_DIR, "config.example.json")
 
-load_dotenv(ENV_PATH)
+# override=True: per-bot .env (BYBIT_ENV_FILE) is authoritative. Иначе любой
+# TELEGRAM_BOT_TOKEN/CHAT_ID, утёкший в окружение процесса (export/source .env
+# бота #1), НЕ перезапишется — и все боты шлют в чат бота #1.
+load_dotenv(ENV_PATH, override=True)
 
 
 def load_config() -> Tuple[Dict[str, Any], str]:
