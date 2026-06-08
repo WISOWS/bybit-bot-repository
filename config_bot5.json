@@ -1,5 +1,5 @@
 {
-  "risk_per_trade": 0.006,
+  "risk_per_trade": 0.005,
   "leverage": 5,
   "enable_adaptive_runtime": false,
   "enable_adaptive_analytics": false,
@@ -33,8 +33,8 @@
   "recv_window_ms": 20000,
   "max_concurrent": 3,
   "symbols": [
-    "OPUSDT",
-    "ARBUSDT",
-    "TONUSDT"
+    "ETCUSDT",
+    "XLMUSDT",
+    "ALGOUSDT"
   ]
 }

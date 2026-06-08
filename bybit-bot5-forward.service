@@ -1,5 +1,5 @@
 [Unit]
-Description=Bybit Bot #5 (meta portfolio forward, DEMO) — OP/ARB/TON
+Description=Bybit Bot #5 (meta portfolio forward, DEMO) — ETC/XLM/ALGO
 After=network-online.target
 Wants=network-online.target
 
@@ -10,7 +10,7 @@ User=ubuntu
 WorkingDirectory=/home/ubuntu/bybit-bot
 Environment=BYBIT_CONFIG_FILE=config_bot5.json
 Environment=BYBIT_ENV_FILE=.env_bot5
-ExecStart=/home/ubuntu/bybit-bot/.venv/bin/python /home/ubuntu/bybit-bot/meta_portfolio_forward_bot5.py --symbols OPUSDT,ARBUSDT,TONUSDT --max-concurrent 3
+ExecStart=/home/ubuntu/bybit-bot/.venv/bin/python /home/ubuntu/bybit-bot/meta_portfolio_forward_bot5.py --symbols ETCUSDT,XLMUSDT,ALGOUSDT --max-concurrent 3
 Restart=on-failure
 RestartSec=10
 StandardOutput=append:/home/ubuntu/bybit-bot/bot5.out.log
