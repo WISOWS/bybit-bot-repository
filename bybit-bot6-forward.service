@@ -1,0 +1,20 @@
+[Unit]
+Description=Bybit Bot #6 (meta portfolio forward, DEMO) — SNX/BNB/BCH/ETH/DOGE/ADA
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# --- ЗАМЕНИ под свой VPS ---
+User=ubuntu
+WorkingDirectory=/home/ubuntu/bybit-bot
+Environment=BYBIT_CONFIG_FILE=config_bot6.json
+Environment=BYBIT_ENV_FILE=.env_bot6
+ExecStart=/home/ubuntu/bybit-bot/.venv/bin/python /home/ubuntu/bybit-bot/meta_portfolio_forward_bot6.py --symbols SNXUSDT,BNBUSDT,BCHUSDT,ETHUSDT,DOGEUSDT,ADAUSDT --max-concurrent 4
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/home/ubuntu/bybit-bot/bot6.out.log
+StandardError=append:/home/ubuntu/bybit-bot/bot6.err.log
+
+[Install]
+WantedBy=multi-user.target

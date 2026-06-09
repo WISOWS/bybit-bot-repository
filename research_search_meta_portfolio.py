@@ -97,6 +97,14 @@ MODEL_SPECS: List[ModelSpec] = [
     ModelSpec(name="op_regime_default", symbol="OPUSDT", params=RegimeSwitchParams()),      # bot #5
     ModelSpec(name="arb_regime_default", symbol="ARBUSDT", params=RegimeSwitchParams()),    # bot #5
     ModelSpec(name="ton_regime_default", symbol="TONUSDT", params=RegimeSwitchParams()),    # bot #5
+    # --- Бот #6 (SNX/BNB/BCH/ETH/DOGE/ADA), DEMO forward. Оптимизированный hybrid:
+    # trend_rr_target=1.8 (победитель TON-free поиска: OOS 300.7% / DD<8% оба периода). ---
+    ModelSpec(name="snx_regime_rr18", symbol="SNXUSDT", params=RegimeSwitchParams(trend_rr_target=1.8)),    # bot #6
+    ModelSpec(name="bnb_regime_rr18", symbol="BNBUSDT", params=RegimeSwitchParams(trend_rr_target=1.8)),    # bot #6
+    ModelSpec(name="bch_regime_rr18", symbol="BCHUSDT", params=RegimeSwitchParams(trend_rr_target=1.8)),    # bot #6
+    ModelSpec(name="eth_regime_rr18", symbol="ETHUSDT", params=RegimeSwitchParams(trend_rr_target=1.8)),    # bot #6
+    ModelSpec(name="doge_regime_rr18", symbol="DOGEUSDT", params=RegimeSwitchParams(trend_rr_target=1.8)),  # bot #6
+    ModelSpec(name="ada_regime_rr18", symbol="ADAUSDT", params=RegimeSwitchParams(trend_rr_target=1.8)),    # bot #6
 ]
 
 

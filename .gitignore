@@ -4,8 +4,11 @@
 .env_bot3
 .env_bot4
 .env_bot5
+.env_bot6
 __pycache__/
 *.pyc
+bot6_*.log
+max*.log
 
 adaptive_state.json
 journal.csv

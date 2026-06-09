@@ -60,6 +60,18 @@ POSITION_IDX = int(CONFIG.get("position_idx", 0))
 TIMEFRAME_SIGNAL = str(CONFIG.get("timeframe_signal", "1h"))
 TIMEFRAME_TREND = str(CONFIG.get("timeframe_trend", "4h"))
 MIN_RR = float(CONFIG.get("min_rr", 3.0))
+
+# regime_switch_hybrid parameter overrides (bot #6: {"trend_rr_target": 1.8}).
+# In the backtest, the trend leg sets TP = entry +/- risk * trend_rr_target. Live,
+# the same role is played by the RR used in TP computation below (was MIN_RR) plus
+# a hard RR floor (was the literal 2.8). When an override is present we drive both
+# from trend_rr_target; without one we reproduce the historical 3.0/2.8 behaviour
+# exactly, so bots #1-5 are unaffected.
+REGIME_PARAMS_OVERRIDE = dict(CONFIG.get("regime_params_override", {}) or {})
+_TREND_RR_OVERRIDE = REGIME_PARAMS_OVERRIDE.get("trend_rr_target")
+TREND_RR_TARGET = float(_TREND_RR_OVERRIDE) if _TREND_RR_OVERRIDE is not None else MIN_RR
+LIVE_RR_FLOOR = round(TREND_RR_TARGET - 0.2, 4) if _TREND_RR_OVERRIDE is not None else 2.8
+
 SYMBOLS = list(CONFIG.get("symbols", []))
 TRIGGER_BY = str(CONFIG.get("trigger_by", "LastPrice"))
 
@@ -1865,10 +1877,10 @@ def process_symbol(client: BybitClient, symbol: str, today_trades: int) -> int:
     entry = live_price
     if side == "Buy":
         raw_stop = level - atr_4h * SL_ATR_BUFFER
-        raw_tp = entry + (entry - raw_stop) * MIN_RR
+        raw_tp = entry + (entry - raw_stop) * TREND_RR_TARGET
     else:
         raw_stop = level + atr_4h * SL_ATR_BUFFER
-        raw_tp = entry - (raw_stop - entry) * MIN_RR
+        raw_tp = entry - (raw_stop - entry) * TREND_RR_TARGET
 
     if side == "Buy":
         stop_dec, stop_str = normalize_price(raw_stop, constraints, ROUND_DOWN)
@@ -1910,8 +1922,8 @@ def process_symbol(client: BybitClient, symbol: str, today_trades: int) -> int:
         edge_v2 = None
 
     rr = reward / risk
-    if rr < 2.8:
-        logger.info("%s: RR=%.2f < %.2f, NO TRADE", symbol, rr, 2.8)
+    if rr < LIVE_RR_FLOOR:
+        logger.info("%s: RR=%.2f < %.2f, NO TRADE", symbol, rr, LIVE_RR_FLOOR)
         return today_trades
 
     max_stop_distance = atr_4h * MAX_STOP_ATR
@@ -2280,6 +2292,15 @@ def main() -> None:
         LIVE_MIN_DISTANCE_SCORE,
         LIVE_REQUIRE_IMPULSE,
     )
+    if _TREND_RR_OVERRIDE is not None:
+        logger.info(
+            "regime_params_override: trend_rr_target=%.2f (TP RR), live RR floor=%.2f%s",
+            TREND_RR_TARGET,
+            LIVE_RR_FLOOR,
+            "".join(
+                f"; {k}={v}" for k, v in REGIME_PARAMS_OVERRIDE.items() if k != "trend_rr_target"
+            ),
+        )
     logger.info(
         "Портфельные лимиты: max_positions_per_direction=%s max_directional_risk_pct=%.2f%% max_total_open_risk_pct=%.2f%%",
         MAX_POSITIONS_PER_DIRECTION,
