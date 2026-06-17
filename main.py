@@ -29,10 +29,44 @@ ENV_PATH = os.path.join(BASE_DIR, os.getenv("BYBIT_ENV_FILE", ".env"))
 CONFIG_PATH = os.path.join(BASE_DIR, os.getenv("BYBIT_CONFIG_FILE", "config.json"))
 CONFIG_EXAMPLE_PATH = os.path.join(BASE_DIR, "config.example.json")
 
+# Диагностика: какой именно env-файл грузим (виден в логах systemd сразу).
+print(f"Loading env from: {os.getenv('BYBIT_ENV_FILE', '.env')}", flush=True)
+
+# РАДИКАЛЬНО: если заданного env-файла НЕТ, load_dotenv молча ничего не делает —
+# и TELEGRAM_BOT_TOKEN/ключи тянутся из чужого окружения процесса (корень бага
+# «все боты шлют в один чат»). Падаем громко, а не работаем с чужим токеном.
+if not os.path.exists(ENV_PATH):
+    raise SystemExit(
+        f"FATAL: env-файл не найден: {ENV_PATH}. "
+        f"Создай его (cp {os.getenv('BYBIT_ENV_FILE', '.env')}.example "
+        f"{os.getenv('BYBIT_ENV_FILE', '.env')}) и впиши СВОИ ключи/токен. "
+        f"Без своего файла бот использовал бы чужой токен из окружения."
+    )
+
 # override=True: per-bot .env (BYBIT_ENV_FILE) is authoritative. Иначе любой
 # TELEGRAM_BOT_TOKEN/CHAT_ID, утёкший в окружение процесса (export/source .env
 # бота #1), НЕ перезапишется — и все боты шлют в чат бота #1.
 load_dotenv(ENV_PATH, override=True)
+
+# РАДИКАЛЬНО v2: добиваем утечку. Даже с override=True per-bot .env перезаписывает
+# ТОЛЬКО ключи, которые в нём есть. Если в .env_botN нет TELEGRAM_*, чужой токен
+# из окружения выживает. Поэтому, если в файле нет своего токена — вычищаем
+# TELEGRAM_* из окружения, чтобы бот ушёл в no-op, а не в чужой чат.
+def _env_file_has(key: str) -> bool:
+    try:
+        with open(ENV_PATH, "r", encoding="utf-8") as fh:
+            return any(
+                ln.strip().split("=", 1)[0].strip() == key
+                for ln in fh
+                if ln.strip() and not ln.lstrip().startswith("#")
+            )
+    except OSError:
+        return False
+
+
+for _tg_key in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
+    if not _env_file_has(_tg_key):
+        os.environ.pop(_tg_key, None)
 
 
 def load_config() -> Tuple[Dict[str, Any], str]:

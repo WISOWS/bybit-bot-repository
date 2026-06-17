@@ -27,6 +27,7 @@ BOT_PREFIX = {
     "3": "🟠 БОТ #3:",
     "4": "🟣 БОТ #4:",
     "5": "🟡 БОТ #5:",
+    "6": "⚪ БОТ #6:",
 }.get(BOT_NUMBER, "")
 
 TELEGRAM_TIMEOUT_SEC = 5
