@@ -94,9 +94,11 @@ MODEL_SPECS: List[ModelSpec] = [
     ModelSpec(name="dot_regime_default", symbol="DOTUSDT", params=RegimeSwitchParams()),    # bot #4
     ModelSpec(name="avax_regime_default", symbol="AVAXUSDT", params=RegimeSwitchParams()),  # bot #4
     ModelSpec(name="rune_regime_default", symbol="RUNEUSDT", params=RegimeSwitchParams()),  # bot #4
-    ModelSpec(name="op_regime_default", symbol="OPUSDT", params=RegimeSwitchParams()),      # bot #5
-    ModelSpec(name="arb_regime_default", symbol="ARBUSDT", params=RegimeSwitchParams()),    # bot #5
-    ModelSpec(name="ton_regime_default", symbol="TONUSDT", params=RegimeSwitchParams()),    # bot #5
+    # bot #5 переехал с OP/ARB/TON на ETC/XLM/ALGO (так запускается в systemd).
+    # Дефолтные RegimeSwitchParams; калибровку позже.
+    ModelSpec(name="etc_regime_default", symbol="ETCUSDT", params=RegimeSwitchParams()),    # bot #5
+    ModelSpec(name="xlm_regime_default", symbol="XLMUSDT", params=RegimeSwitchParams()),    # bot #5
+    ModelSpec(name="algo_regime_default", symbol="ALGOUSDT", params=RegimeSwitchParams()),  # bot #5
     # --- Бот #6 (SNX/BNB/BCH/ETH/DOGE/ADA), DEMO forward. Оптимизированный hybrid:
     # trend_rr_target=1.8 (победитель TON-free поиска: OOS 300.7% / DD<8% оба периода). ---
     ModelSpec(name="snx_regime_rr18", symbol="SNXUSDT", params=RegimeSwitchParams(trend_rr_target=1.8)),    # bot #6
