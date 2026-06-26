@@ -32,9 +32,12 @@
   "min_live_trades_for_adaptive_weights": 30,
   "recv_window_ms": 20000,
   "max_concurrent": 3,
+  "_about": "Account #4 / Bot A — стандартная regime_switch на уверенных парах (DOT/AVAX/RUNE из #4 + ETC/XLM из #5). Контроль для A/B против Bot #3 (improved).",
   "symbols": [
     "DOTUSDT",
     "AVAXUSDT",
-    "RUNEUSDT"
+    "RUNEUSDT",
+    "ETCUSDT",
+    "XLMUSDT"
   ]
 }

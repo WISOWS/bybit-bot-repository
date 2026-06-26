@@ -1,5 +1,5 @@
 {
-  "risk_per_trade": 0.006,
+  "risk_per_trade": 0.005,
   "leverage": 5,
   "enable_adaptive_runtime": false,
   "enable_adaptive_analytics": false,
@@ -31,28 +31,13 @@
   "max_positions_per_direction": 5,
   "min_live_trades_for_adaptive_weights": 30,
   "recv_window_ms": 20000,
-  "max_concurrent": 4,
-  "strategy": "regime_switch_hybrid",
-  "regime_params_override": {
-    "trend_rr_target": 1.8
-  },
-  "_backtest": {
-    "oos_annual_pct": 300.7,
-    "oos_mtm_dd_pct": 6.34,
-    "is_annual_pct": 148.3,
-    "is_mtm_dd_pct": 7.88,
-    "oos_pf": 1.884,
-    "oos_sharpe": 5.78,
-    "variant": "rr18nt6",
-    "no_ton": true,
-    "gate": "OOS>200 & IS>80 & DD<8 both"
-  },
+  "max_concurrent": 3,
+  "_about": "Account #6 / Bot B — стандартная regime_switch БЕЗ rr18-оверрайда (rr18 убран: в бэктесте топ, но live худший). Уверенные пары: выжившие #6 (BNB/ETH) + #3 (ATOM/TIA) + SUI из #2.",
   "symbols": [
-    "SNXUSDT",
     "BNBUSDT",
-    "BCHUSDT",
     "ETHUSDT",
-    "DOGEUSDT",
-    "ADAUSDT"
+    "ATOMUSDT",
+    "TIAUSDT",
+    "SUIUSDT"
   ]
 }

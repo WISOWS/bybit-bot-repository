@@ -30,6 +30,17 @@ BOT_PREFIX = {
     "6": "⚪ БОТ #6:",
 }.get(BOT_NUMBER, "")
 
+# ДИАГНОСТИКА: какой токен реально захвачен на уровне модуля при импорте.
+# Печатается ОДИН раз при импорте telegram_notifier — т.е. фиксирует, что было
+# в os.environ ПОСЛЕ load_dotenv(override=True) в main.py (импорт notifier идёт
+# строкой ниже from main import). Если тут чужой токен — баг в порядке загрузки
+# env/окружении процесса, а не в самом notifier.
+print(
+    f"[telegram_notifier import] CAPTURED token: {TELEGRAM_BOT_TOKEN[:20]}... "
+    f"chat_id={TELEGRAM_CHAT_ID} bot_number={BOT_NUMBER!r} env_file={os.environ.get('BYBIT_ENV_FILE')!r}",
+    flush=True,
+)
+
 TELEGRAM_TIMEOUT_SEC = 5
 MESSAGE_DEDUP_WINDOW_SEC = 60.0
 ERROR_LOG_DEDUP_WINDOW_SEC = 300.0
@@ -91,6 +102,14 @@ def _log_send_error_once(exc: Exception) -> None:
 
 
 def _send_formatted_message_sync(formatted_message: str) -> None:
+    # ДИАГНОСТИКА: какой токен реально используется в момент отправки. Так как
+    # TELEGRAM_BOT_TOKEN — модульная константа, это значение == захваченному при
+    # импорте; печать здесь подтверждает, что на проводе именно он (и ловит любое
+    # неожиданное расхождение между импортом и реальной отправкой).
+    print(
+        f"SENDING via token: {TELEGRAM_BOT_TOKEN[:20]}... bot_number={BOT_NUMBER}",
+        flush=True,
+    )
     payload = urlencode(
         {
             "chat_id": TELEGRAM_CHAT_ID,

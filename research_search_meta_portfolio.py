@@ -99,14 +99,28 @@ MODEL_SPECS: List[ModelSpec] = [
     ModelSpec(name="etc_regime_default", symbol="ETCUSDT", params=RegimeSwitchParams()),    # bot #5
     ModelSpec(name="xlm_regime_default", symbol="XLMUSDT", params=RegimeSwitchParams()),    # bot #5
     ModelSpec(name="algo_regime_default", symbol="ALGOUSDT", params=RegimeSwitchParams()),  # bot #5
-    # --- Бот #6 (SNX/BNB/BCH/ETH/DOGE/ADA), DEMO forward. Оптимизированный hybrid:
-    # trend_rr_target=1.8 (победитель TON-free поиска: OOS 300.7% / DD<8% оба периода). ---
-    ModelSpec(name="snx_regime_rr18", symbol="SNXUSDT", params=RegimeSwitchParams(trend_rr_target=1.8)),    # bot #6
-    ModelSpec(name="bnb_regime_rr18", symbol="BNBUSDT", params=RegimeSwitchParams(trend_rr_target=1.8)),    # bot #6
-    ModelSpec(name="bch_regime_rr18", symbol="BCHUSDT", params=RegimeSwitchParams(trend_rr_target=1.8)),    # bot #6
-    ModelSpec(name="eth_regime_rr18", symbol="ETHUSDT", params=RegimeSwitchParams(trend_rr_target=1.8)),    # bot #6
-    ModelSpec(name="doge_regime_rr18", symbol="DOGEUSDT", params=RegimeSwitchParams(trend_rr_target=1.8)),  # bot #6
-    ModelSpec(name="ada_regime_rr18", symbol="ADAUSDT", params=RegimeSwitchParams(trend_rr_target=1.8)),    # bot #6
+    # --- Бот #6 / Bot B (BNB/ETH/ATOM/TIA/SUI). rr18-оверрайд УБРАН 26.06.2026 —
+    # в бэктесте топ (OOS 300%), но LIVE худший (−3027). Стандартные RegimeSwitchParams.
+    # ATOM/TIA/SUI берут свои _default спеки выше. ---
+    ModelSpec(name="bnb_regime_default", symbol="BNBUSDT", params=RegimeSwitchParams()),   # bot #6 / Bot B
+    ModelSpec(name="eth_regime_default", symbol="ETHUSDT", params=RegimeSwitchParams()),   # bot #6 / Bot B
+    # SNX/BCH/DOGE/ADA — убраны как токсичные/неактивные; спеки оставлены на default.
+    ModelSpec(name="snx_regime_default", symbol="SNXUSDT", params=RegimeSwitchParams()),
+    ModelSpec(name="bch_regime_default", symbol="BCHUSDT", params=RegimeSwitchParams()),
+    ModelSpec(name="doge_regime_default", symbol="DOGEUSDT", params=RegimeSwitchParams()),
+    ModelSpec(name="ada_regime_default", symbol="ADAUSDT", params=RegimeSwitchParams()),
+    # --- Аккаунт #2 / Fresh-A (XRP/HYPE/AAVE/TAO/APT), 26.06.2026. Default params; калибровку позже. ---
+    ModelSpec(name="xrp_regime_default", symbol="XRPUSDT", params=RegimeSwitchParams()),
+    ModelSpec(name="hype_regime_default", symbol="HYPEUSDT", params=RegimeSwitchParams()),
+    ModelSpec(name="aave_regime_default", symbol="AAVEUSDT", params=RegimeSwitchParams()),
+    ModelSpec(name="tao_regime_default", symbol="TAOUSDT", params=RegimeSwitchParams()),
+    ModelSpec(name="apt_regime_default", symbol="APTUSDT", params=RegimeSwitchParams()),
+    # --- Аккаунт #5 / Fresh-B (LTC/WLD/JTO/MNT/SEI), 26.06.2026. Default params; калибровку позже. ---
+    ModelSpec(name="ltc_regime_default", symbol="LTCUSDT", params=RegimeSwitchParams()),
+    ModelSpec(name="wld_regime_default", symbol="WLDUSDT", params=RegimeSwitchParams()),
+    ModelSpec(name="jto_regime_default", symbol="JTOUSDT", params=RegimeSwitchParams()),
+    ModelSpec(name="mnt_regime_default", symbol="MNTUSDT", params=RegimeSwitchParams()),
+    ModelSpec(name="sei_regime_default", symbol="SEIUSDT", params=RegimeSwitchParams()),
 ]
 
 

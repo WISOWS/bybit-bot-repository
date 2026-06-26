@@ -1,5 +1,5 @@
 {
-  "risk_per_trade": 0.0055,
+  "risk_per_trade": 0.005,
   "leverage": 5,
   "enable_adaptive_runtime": false,
   "enable_adaptive_analytics": false,
@@ -32,9 +32,12 @@
   "min_live_trades_for_adaptive_weights": 30,
   "recv_window_ms": 20000,
   "max_concurrent": 3,
+  "_about": "Account #3 / Improved (A/B vs Bot A). ФАЗА 1: пока baseline-копия Bot A (те же пары DOT/AVAX/RUNE/ETC/XLM, стандартная regime_switch). ФАЗА 2: сюда придут 4 фикса под флагами (per-symbol стоп, кулдаун, чоп-фильтр, защита от мгновенного close).",
   "symbols": [
-    "ATOMUSDT",
-    "INJUSDT",
-    "TIAUSDT"
+    "DOTUSDT",
+    "AVAXUSDT",
+    "RUNEUSDT",
+    "ETCUSDT",
+    "XLMUSDT"
   ]
 }

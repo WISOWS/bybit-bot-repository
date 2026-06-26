@@ -1,5 +1,5 @@
 {
-  "risk_per_trade": 0.0065,
+  "risk_per_trade": 0.005,
   "leverage": 5,
   "enable_adaptive_runtime": false,
   "enable_adaptive_analytics": false,
@@ -32,9 +32,12 @@
   "min_live_trades_for_adaptive_weights": 30,
   "recv_window_ms": 20000,
   "max_concurrent": 3,
+  "_about": "Account #2 / Fresh-A — стандартная regime_switch (без rr18). Свежие ликвидные пары под накопление стата для пропов (26.06.2026).",
   "symbols": [
-    "ONDOUSDT",
-    "ZECUSDT",
-    "SUIUSDT"
+    "XRPUSDT",
+    "HYPEUSDT",
+    "AAVEUSDT",
+    "TAOUSDT",
+    "APTUSDT"
   ]
 }

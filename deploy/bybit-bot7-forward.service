@@ -1,0 +1,19 @@
+[Unit]
+Description=Bybit Bot #7 (prop-aware champion, DEMO) — TIA/SUI/DOT/ATOM/ETH/ETC/BNB
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/bybit-bot-repository
+Environment=BYBIT_CONFIG_FILE=config_bot7.json
+Environment=BYBIT_ENV_FILE=.env_bot7
+ExecStart=/root/bybit-bot-repository/.venv/bin/python /root/bybit-bot-repository/meta_portfolio_forward_bot7.py --symbols TIAUSDT,SUIUSDT,DOTUSDT,ATOMUSDT,ETHUSDT,ETCUSDT,BNBUSDT --max-concurrent 4
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/root/bybit-bot-repository/bot7.out.log
+StandardError=append:/root/bybit-bot-repository/bot7.err.log
+
+[Install]
+WantedBy=multi-user.target

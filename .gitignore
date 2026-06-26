@@ -5,8 +5,10 @@
 .env_bot4
 .env_bot5
 .env_bot6
+.env_bot7
 __pycache__/
 *.pyc
+/bybit-bot-repository/
 bot6_*.log
 max*.log
 

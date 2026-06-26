@@ -32,9 +32,12 @@
   "min_live_trades_for_adaptive_weights": 30,
   "recv_window_ms": 20000,
   "max_concurrent": 3,
+  "_about": "Account #5 / Fresh-B — стандартная regime_switch (без rr18). Второй набор свежих ликвидных пар (без пересечения с #2) под накопление стата для пропов.",
   "symbols": [
-    "ETCUSDT",
-    "XLMUSDT",
-    "ALGOUSDT"
+    "LTCUSDT",
+    "WLDUSDT",
+    "JTOUSDT",
+    "MNTUSDT",
+    "SEIUSDT"
   ]
 }

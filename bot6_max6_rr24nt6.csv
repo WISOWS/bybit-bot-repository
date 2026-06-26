@@ -1,0 +1,4 @@
+label,pairs,risk_pct,conc,oos_annual,oos_dd,oos_pf,oos_sharpe,oos_win,oos_trades,is_annual,is_dd,is_pf
+rr24nt6,1000PEPE+APT+BCH+ETH+DOGE+ADA,0.55,2,172.9,7.19,1.858,4.99,50.1,523,140.7,7.99,1.691
+rr24nt6,1000PEPE+BCH+LTC+ETH+DOGE+VET,0.55,2,228.8,7.09,1.969,5.76,51.8,568,104.1,7.68,1.544
+rr24nt6,1000PEPE+BCH+LTC+ETH+DOGE+ADA,0.55,2,205.0,6.93,1.874,5.52,51.5,540,120.9,7.9,1.595
