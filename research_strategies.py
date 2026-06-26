@@ -1,3 +1,5 @@
+import hashlib
+import math
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -42,6 +44,13 @@ class TrendPullbackParams:
     require_clean_level: bool = True
     require_structure_touch: bool = False
     strict_trend_alignment: bool = False
+    # anti–stop-hunting (default off => поведение не меняется)
+    sweep_buffer_atr: float = 0.0
+    sweep_lookback_1h: int = 10
+    sl_jitter_pct: float = 0.0
+    avoid_round_numbers: bool = False
+    round_number_atr_frac: float = 0.15
+    skip_entry_near_round: bool = False
 
 
 @dataclass(frozen=True)
@@ -67,6 +76,13 @@ class RangeMeanReversionParams:
     min_rr: float = 1.5
     max_stop_multiplier: float = 1.0
     require_directional_close: bool = True
+    # anti–stop-hunting (default off => поведение не меняется)
+    sweep_buffer_atr: float = 0.0
+    sweep_lookback_1h: int = 10
+    sl_jitter_pct: float = 0.0
+    avoid_round_numbers: bool = False
+    round_number_atr_frac: float = 0.15
+    require_sweep_reclaim: bool = False
 
 
 @dataclass(frozen=True)
@@ -101,6 +117,14 @@ class RegimeSwitchParams:
     range_min_rr: float = 1.3
     range_max_stop_multiplier: float = 1.0
     regime_lookback_4h: int = 30
+    # anti–stop-hunting (default off => поведение не меняется), общие для обеих веток
+    sweep_buffer_atr: float = 0.0
+    sweep_lookback_1h: int = 10
+    sl_jitter_pct: float = 0.0
+    avoid_round_numbers: bool = False
+    round_number_atr_frac: float = 0.15
+    skip_entry_near_round: bool = False
+    require_sweep_reclaim: bool = False
 
 
 def candle_open(candle: List[Any]) -> float:
@@ -156,6 +180,100 @@ def recent_low(klines: List[List[Any]], idx: int, lookback: int) -> float:
 def recent_high(klines: List[List[Any]], idx: int, lookback: int) -> float:
     start = max(0, idx - lookback + 1)
     return max(candle_high(candle) for candle in klines[start : idx + 1])
+
+
+# --- Anti–stop-hunting helpers -------------------------------------------------
+# Маркетмейкеры выбивают стопы у очевидных структурных уровней (свинги, границы
+# рейнджа, круглые числа), где стопы скапливаются. Наши SL стоят там же с малым
+# фиксированным буфером => предсказуемы и первыми попадают под sweep. Помощники
+# ниже (1) уводят SL за типичную глубину sweep'а, (2) добавляют недетерминируемый
+# для наблюдателя сдвиг, (3) не дают парковать стоп прямо у круглого числа.
+
+
+def _det_jitter(seed_parts: List[Any], max_frac: float) -> float:
+    """Детерминированный псевдослучайный сдвиг в [-max_frac, max_frac].
+
+    Воспроизводим в бэктесте (зависит только от сетапа), но не угадывается
+    наблюдателем, не знающим seed. Не использует Math.random — backtest стабилен.
+    """
+    if max_frac <= 0:
+        return 0.0
+    raw = "|".join(f"{p:.8f}" if isinstance(p, float) else str(p) for p in seed_parts)
+    h = int(hashlib.sha256(raw.encode()).hexdigest(), 16)
+    unit = (h % 10_000_000) / 10_000_000.0  # [0, 1)
+    return (unit * 2 - 1) * max_frac
+
+
+def recent_wick_beyond(
+    klines: List[List[Any]], idx: int, lookback: int, level: float, side: str
+) -> float:
+    """Макс. глубина, на которую цена прокалывала `level` против нашей позиции
+    за последние `lookback` свечей — оценка того, как глубоко идут sweep'ы."""
+    start = max(0, idx - lookback + 1)
+    depth = 0.0
+    for candle in klines[start : idx + 1]:
+        if side == "Buy":  # стоп снизу: насколько low пробивали уровень вниз
+            depth = max(depth, level - candle_low(candle))
+        else:  # стоп сверху: насколько high пробивали уровень вверх
+            depth = max(depth, candle_high(candle) - level)
+    return max(0.0, depth)
+
+
+def nearest_round(price: float) -> float:
+    """Ближайший психологический круглый уровень. Шаг сетки ~1% от цены, так
+    что работает и для NEAR (~$3), и для SOL (~$150). Калибруется под символ."""
+    if price <= 0:
+        return price
+    step = 10 ** (math.floor(math.log10(price)) - 1)
+    return round(price / step) * step
+
+
+def near_round_number(price: float, atr: float, frac: float = 0.15) -> bool:
+    """True, если цена сидит ближе frac*ATR к круглому уровню (магнит/кластер)."""
+    if atr <= 0:
+        return False
+    return abs(price - nearest_round(price)) <= atr * frac
+
+
+def protect_stop(
+    raw_stop: float,
+    level: float,
+    entry: float,
+    side: str,
+    atr: float,
+    klines_1h: List[List[Any]],
+    idx_1h: int,
+    *,
+    base_buffer_atr: float,
+    sweep_buffer_atr: float = 0.0,
+    sweep_lookback: int = 10,
+    jitter_pct: float = 0.0,
+    push_past_round: bool = False,
+    round_frac: float = 0.15,
+) -> float:
+    """SL за зоной ликвидности, а не на ней. Все добавки только РАСШИРЯЮТ стоп
+    (наружу), поэтому при выключенных флагах возвращает raw_stop без изменений."""
+    extra = 0.0
+    if sweep_buffer_atr > 0:
+        wick = recent_wick_beyond(klines_1h, idx_1h, sweep_lookback, level, side)
+        # увести стоп за типичную глубину прокола, но не меньше явного буфера
+        extra = max(atr * sweep_buffer_atr, wick - atr * base_buffer_atr)
+        extra = max(0.0, extra)
+    jitter = abs(_det_jitter([entry, level, idx_1h], jitter_pct / 100.0)) * entry
+
+    if side == "Buy":
+        stop = raw_stop - extra - jitter
+        if push_past_round:
+            rn = nearest_round(stop)
+            if 0 < (stop - rn) <= atr * round_frac:  # стоп чуть выше круглого -> увести ниже
+                stop = rn - atr * round_frac
+    else:
+        stop = raw_stop + extra + jitter
+        if push_past_round:
+            rn = nearest_round(stop)
+            if 0 < (rn - stop) <= atr * round_frac:
+                stop = rn + atr * round_frac
+    return stop
 
 
 def ema_trend_4h(
@@ -251,15 +369,28 @@ def make_simple_trend_pullback_strategy(params: TrendPullbackParams):
         if edge_score < params.threshold:
             return None
 
+        if params.skip_entry_near_round and near_round_number(
+            entry, atr_4h, params.round_number_atr_frac
+        ):
+            return None  # не входим под магнитом круглого числа
+
+        raw_stop = level - atr_4h * params.stop_buffer_atr if side == "Buy" else level + atr_4h * params.stop_buffer_atr
+        stop = protect_stop(
+            raw_stop, level, entry, side, atr_4h, klines_1h, idx_1h,
+            base_buffer_atr=params.stop_buffer_atr,
+            sweep_buffer_atr=params.sweep_buffer_atr,
+            sweep_lookback=params.sweep_lookback_1h,
+            jitter_pct=params.sl_jitter_pct,
+            push_past_round=params.avoid_round_numbers,
+            round_frac=params.round_number_atr_frac,
+        )
         if side == "Buy":
-            stop = level - atr_4h * params.stop_buffer_atr
-            tp = entry + (entry - stop) * params.rr_target
             risk = entry - stop
+            tp = entry + risk * params.rr_target
             reward = tp - entry
         else:
-            stop = level + atr_4h * params.stop_buffer_atr
-            tp = entry - (stop - entry) * params.rr_target
             risk = stop - entry
+            tp = entry - risk * params.rr_target
             reward = entry - tp
 
         if risk <= 0 or reward <= 0:
@@ -493,6 +624,12 @@ def make_regime_switch_strategy(params: RegimeSwitchParams):
             require_clean_level=True,
             require_structure_touch=False,
             strict_trend_alignment=False,
+            sweep_buffer_atr=params.sweep_buffer_atr,
+            sweep_lookback_1h=params.sweep_lookback_1h,
+            sl_jitter_pct=params.sl_jitter_pct,
+            avoid_round_numbers=params.avoid_round_numbers,
+            round_number_atr_frac=params.round_number_atr_frac,
+            skip_entry_near_round=params.skip_entry_near_round,
         )
     )
     range_strategy = make_range_mean_reversion_strategy(
@@ -505,6 +642,12 @@ def make_regime_switch_strategy(params: RegimeSwitchParams):
             min_rr=params.range_min_rr,
             max_stop_multiplier=params.range_max_stop_multiplier,
             require_directional_close=True,
+            sweep_buffer_atr=params.sweep_buffer_atr,
+            sweep_lookback_1h=params.sweep_lookback_1h,
+            sl_jitter_pct=params.sl_jitter_pct,
+            avoid_round_numbers=params.avoid_round_numbers,
+            round_number_atr_frac=params.round_number_atr_frac,
+            require_sweep_reclaim=params.require_sweep_reclaim,
         )
     )
 
@@ -754,22 +897,39 @@ def make_range_mean_reversion_strategy(params: RangeMeanReversionParams):
         buy_confirm = bullish_close(current_1h) if params.require_directional_close else True
         sell_confirm = bearish_close(current_1h) if params.require_directional_close else True
 
-        if candle_low(current_1h) <= buy_zone and buy_confirm:
+        # sweep-and-reclaim: вошли только если свеча проколола границу рейнджа
+        # (собрала стопы) и закрылась обратно внутрь — торгуем ПОСЛЕ охоты.
+        buy_reclaim = (candle_low(current_1h) < range_low <= candle_close(current_1h)) if params.require_sweep_reclaim else True
+        sell_reclaim = (candle_high(current_1h) > range_high >= candle_close(current_1h)) if params.require_sweep_reclaim else True
+
+        if candle_low(current_1h) <= buy_zone and buy_confirm and buy_reclaim:
             side = "Buy"
             level = range_low
-            stop = range_low - atr_4h * params.stop_buffer_atr
+            raw_stop = range_low - atr_4h * params.stop_buffer_atr
+        elif candle_high(current_1h) >= sell_zone and sell_confirm and sell_reclaim:
+            side = "Sell"
+            level = range_high
+            raw_stop = range_high + atr_4h * params.stop_buffer_atr
+        else:
+            return None
+
+        stop = protect_stop(
+            raw_stop, level, entry, side, atr_4h, klines_1h, idx_1h,
+            base_buffer_atr=params.stop_buffer_atr,
+            sweep_buffer_atr=params.sweep_buffer_atr,
+            sweep_lookback=params.sweep_lookback_1h,
+            jitter_pct=params.sl_jitter_pct,
+            push_past_round=params.avoid_round_numbers,
+            round_frac=params.round_number_atr_frac,
+        )
+        if side == "Buy":
             risk = entry - stop
             tp = target_price
             reward = tp - entry
-        elif candle_high(current_1h) >= sell_zone and sell_confirm:
-            side = "Sell"
-            level = range_high
-            stop = range_high + atr_4h * params.stop_buffer_atr
+        else:
             risk = stop - entry
             tp = target_price
             reward = entry - tp
-        else:
-            return None
 
         if risk <= 0 or reward <= 0:
             return None
