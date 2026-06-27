@@ -1,0 +1,19 @@
+[Unit]
+Description=Bybit CFT prop bot (2-Step, DOT/AVAX/RUNE/ETC/XLM) — separate VPS/IP
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/bybit-bot-repository
+Environment=BYBIT_CONFIG_FILE=config_cft.json
+Environment=BYBIT_ENV_FILE=.env_cft
+ExecStart=/root/bybit-bot-repository/.venv/bin/python /root/bybit-bot-repository/meta_portfolio_forward_cft.py --symbols DOTUSDT,AVAXUSDT,RUNEUSDT,ETCUSDT,XLMUSDT --max-concurrent 3
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/root/bybit-bot-repository/cft.out.log
+StandardError=append:/root/bybit-bot-repository/cft.err.log
+
+[Install]
+WantedBy=multi-user.target

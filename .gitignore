@@ -6,6 +6,7 @@
 .env_bot5
 .env_bot6
 .env_bot7
+.env_cft
 __pycache__/
 *.pyc
 /bybit-bot-repository/
